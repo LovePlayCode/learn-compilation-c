@@ -5,7 +5,23 @@
 
 VM vm;
 
+static void resetStack() {
+    vm.stackTop = vm.stack;
+}
+
 void initVM() {
+    resetStack();
+
+}
+
+Value pop() {
+    vm.stackTop--;
+    return *vm.stackTop;
+}
+
+void push(Value value) {
+    *vm.stackTop = value;
+    vm.stackTop++;
 }
 
 void freeVM() {
@@ -36,7 +52,13 @@ vm.ip = 当前执行到的指令地址
 两者相减 = 当前指令在数组中的索引
  */
 #ifdef DEBUG_TRACE_EXECUTION
-
+        printf("          ");
+        for (Value* slot = vm.stack; slot < vm.stackTop; slot++) {
+            printf("[ ");
+            printValue(*slot);
+            printf(" ]");
+        }
+        printf("\n");
         disassembleInstruction(vm.chunk,
                                (int)(vm.ip - vm.chunk->code));
 #endif
@@ -44,11 +66,13 @@ vm.ip = 当前执行到的指令地址
         switch (instruction = READ_BYTE()) {
             case OP_CONSTANT: {
                 Value constant = READ_CONSTANT();
-                printValue(constant);
-                printf("\n");
+                push(constant);
                 break;
             }
+            case OP_NEGATE:   push(-pop()); break;
             case OP_RETURN: {
+                printValue(pop());
+                printf("\n");
                 return INTERPRET_OK;
             }
         }
