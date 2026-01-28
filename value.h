@@ -4,6 +4,7 @@
 #include "common.h"
 
 typedef double Value;
+// 常量池
 typedef struct {
     int capacity;
     int count;

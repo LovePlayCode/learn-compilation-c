@@ -13,6 +13,7 @@ typedef struct {
     int capacity;
     uint8_t* code;
     int* lines;
+    // 保存常量的属性
     ValueArray constants;
 } Chunk;
 void initChunk(Chunk* chunk);

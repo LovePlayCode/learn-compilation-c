@@ -18,7 +18,12 @@
 └─────────┘    └─────────────────┘
     ↓
   被释放
-
+四种使用场景
+pointer	oldSize	newSize	行为
+NULL	0	> 0	分配新内存
+有效指针	> 0	> oldSize	扩容
+有效指针	> 0	< oldSize	缩容
+有效指针	> 0	0	释放内存
  */
 void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
     if (newSize == 0) {

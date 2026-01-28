@@ -8,7 +8,9 @@ int main(void) {
     Chunk chunk;
     initChunk(&chunk);
     int constant = addConstant(&chunk, 1.2);
+    // 字节0，操作码
     writeChunk(&chunk, OP_CONSTANT, 123);
+    // 字节 1，常量
     writeChunk(&chunk, constant, 123);
 
     writeChunk(&chunk, OP_RETURN, 123);
