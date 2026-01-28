@@ -12,4 +12,6 @@ add_executable(learn_compilation_c main.c
         debug.h
         debug.c
         value.h
-        value.c)
+        value.c
+        vm.h
+        vm.c)
