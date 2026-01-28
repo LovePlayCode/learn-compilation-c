@@ -1,6 +1,7 @@
 #include "common.h"
 #include "vm.h"
 #include <stdio.h>
+#include "debug.h"
 
 VM vm;
 
@@ -18,6 +19,27 @@ static InterpretResult run() {
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
 
     for (;;) {
+        
+
+/**
+ * chunk->code (数组起始地址)
+    ↓
+┌─────────────┬─────────────┬─────────────┐
+│ OP_CONSTANT │   索引 0    │ OP_RETURN   │
+└─────────────┴─────────────┴─────────────┘
+                    ↑
+                  vm.ip (当前指令指针)
+
+offset = vm.ip - vm.chunk->code = 2
+vm.chunk->code = 字节码数组的起始地址
+vm.ip = 当前执行到的指令地址
+两者相减 = 当前指令在数组中的索引
+ */
+#ifdef DEBUG_TRACE_EXECUTION
+
+        disassembleInstruction(vm.chunk,
+                               (int)(vm.ip - vm.chunk->code));
+#endif
         uint8_t instruction;
         switch (instruction = READ_BYTE()) {
             case OP_CONSTANT: {
