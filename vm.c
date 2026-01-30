@@ -2,6 +2,7 @@
 #include "vm.h"
 #include <stdio.h>
 #include "debug.h"
+#include "compiler.h"
 
 VM vm;
 
@@ -94,8 +95,7 @@ vm.ip = 当前执行到的指令地址
 
 }
 
-InterpretResult interpret(Chunk* chunk) {
-    vm.chunk = chunk;
-    vm.ip = vm.chunk->code;
-    return run();
+InterpretResult interpret(const char* source) {
+    compile(source);
+    return INTERPRET_OK;
 }
