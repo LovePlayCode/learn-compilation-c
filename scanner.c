@@ -30,6 +30,13 @@ static char advance()
     return scanner.current[-1];
 }
 
+static char peekNext()
+{
+    if (isAtEnd())
+        return '\0';
+    return scanner.current[1];
+}
+
 static bool match(char expected)
 {
     if (isAtEnd())
@@ -71,10 +78,41 @@ static void skipWhitespace()
             scanner.line++;
             advance();
             break;
+        case '/':
+            if (peekNext() == '/')
+            {
+                // A comment goes until the end of the line.
+                while (peek() != '\n' && !isAtEnd())
+                    advance();
+            }
+            // 只要不是\n，一直消费字符，当循环结束时，当前字符一定是\n或字符串结尾
+            // 可以再次进入循环，由其他分支进行消费和增加 line
+            else
+            {
+                return;
+            }
+            break;
         default:
             return;
         }
     }
+}
+
+static Token string()
+{
+    while (peek() != '"' && !isAtEnd())
+    {
+        if (peek() == '\n')
+            scanner.line++;
+        advance();
+    }
+
+    if (isAtEnd())
+        return errorToken("Unterminated string.");
+
+    // The closing quote.
+    advance();
+    return makeToken(TOKEN_STRING);
 }
 
 static Token makeToken(TokenType type)
@@ -87,6 +125,29 @@ static Token makeToken(TokenType type)
     return token;
 }
 
+static Token number()
+{
+    while (isDigit(peek()))
+        advance();
+
+    // Look for a fractional part.
+    if (peek() == '.' && isDigit(peekNext()))
+    {
+        // Consume the ".".
+        advance();
+
+        while (isDigit(peek()))
+            advance();
+    }
+
+    return makeToken(TOKEN_NUMBER);
+}
+
+static bool isDigit(char c)
+{
+    return c >= '0' && c <= '9';
+}
+
 Token scanToken()
 {
     skipWhitespace();
@@ -96,6 +157,8 @@ Token scanToken()
     if (isAtEnd())
         return makeToken(TOKEN_EOF);
     char c = advance();
+    if (isDigit(c))
+        return number();
 
     switch (c)
     {
@@ -133,6 +196,8 @@ Token scanToken()
     case '>':
         return makeToken(
             match('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER);
+    case '"':
+        return string();
     }
     return errorToken("Unexpected character.");
 }
