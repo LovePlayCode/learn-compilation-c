@@ -27,6 +27,15 @@ typedef enum
     PREC_PRIMARY
 } Precedence;
 
+typedef struct
+{
+    ParseFn prefix;
+    ParseFn infix;
+    Precedence precedence;
+} ParseRule;
+
+typedef void (*ParseFn)();
+
 Parser parser;
 
 Chunk *compilingChunk;
@@ -118,15 +127,147 @@ static void endCompiler()
     emitReturn();
 }
 
+static void expression();
+static ParseRule *getRule(TokenType type);
+static void parsePrecedence(Precedence precedence);
+
+static void binary()
+{
+    TokenType operatorType = parser.previous.type;
+    // 表驱动语法，通过 getRule() 查表 + precedence + 1，Pratt 解析器在解析右操作数时，精准地“只吃该吃的表达式”，从而让一个 binary() 函数正确处理所有不同优先级的二元运算符。
+    ParseRule *rule = getRule(operatorType);
+    parsePrecedence((Precedence)(rule->precedence + 1));
+
+    switch (operatorType)
+    {
+    case TOKEN_PLUS:
+        emitByte(OP_ADD);
+        break;
+    case TOKEN_MINUS:
+        emitByte(OP_SUBTRACT);
+        break;
+    case TOKEN_STAR:
+        emitByte(OP_MULTIPLY);
+        break;
+    case TOKEN_SLASH:
+        emitByte(OP_DIVIDE);
+        break;
+    default:
+        return; // Unreachable.
+    }
+}
+
 static void grouping()
 {
     expression();
     consume(TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
 }
 
+/**
+ * 表达式：
+
+-1 + 2 * 3
+
+
+假设我们调用：
+
+parsePrecedence(PREC_ASSIGNMENT);
+
+步骤跟踪
+
+解析前缀 -1
+
+advance() → TOKEN_MINUS
+
+prefixRule() → unary()
+
+unary() 调用 parsePrecedence(PREC_UNARY) → 解析 1
+
+发出 OP_CONSTANT 1 和 OP_NEGATE
+
+循环处理中缀运算符 +
+
+parser.current → TOKEN_PLUS
+
+getRule()->precedence → PREC_TERM (加减)
+
+PREC_ASSIGNMENT <= PREC_TERM → 是，进入循环
+
+advance() 消耗 +
+
+infixRule() → binary()
+
+binary() 调用 parsePrecedence(PREC_TERM + 1) → 解析右操作数 2 * 3
+
+解析 2 → 发出 OP_CONSTANT 2
+
+解析 * → 乘法优先级比加法高 → 进入二元循环
+
+解析 3 → 发出 OP_CONSTANT 3，再发出 OP_MULTIPLY
+
+完成右操作数 → 发出 OP_ADD
+
+下一个 token 是 EOF → 循环结束
+
+整个表达式完成解析。
+
+4. 为什么 Pratt Parser 高效优雅
+
+不需要为每种运算符写不同函数
+
+前缀用 prefixRule
+
+中缀用 binary()（或者其它中缀函数）
+
+优先级由表格驱动动态处理右操作数
+
+天然处理结合性和优先级
+
+parsePrecedence(当前运算符优先级+1) → 左结合
+
+右结合可以传入同级优先级
+
+灵活扩展
+
+新增运算符只需更新 ParseRule 表格，函数指针即可自动接入解析流程。
+
+5. 小结
+
+parsePrecedence() 的核心思想：
+
+先处理前缀 → 消耗第一个 token 并生成左操作数
+
+循环处理中缀 → 根据优先级决定是否继续解析
+
+递归调用 → 对右操作数和括号等结构递归解析
+
+表格驱动 → ParseRule 表格将 token 与前缀/中缀函数和优先级关联起来
+
+✅ 它将左结合和优先级控制自然整合，代码量少，但能解析复杂表达式。
+ */
 static void parsePrecedence(Precedence precedence)
 {
-    // What goes here?
+    advance();
+    ParseFn prefixRule = getRule(parser.previous.type)->prefix;
+    if (prefixRule == NULL)
+    {
+        error("Expect expression.");
+        return;
+    }
+
+    prefixRule();
+
+    while (precedence <= getRule(parser.current.type)->precedence)
+    {
+        advance();
+        ParseFn infixRule = getRule(parser.previous.type)->infix;
+        infixRule();
+    }
+}
+
+static ParseRule *getRule(TokenType type)
+{
+    return &rules[type];
 }
 
 /**
@@ -152,6 +293,49 @@ static void unary()
         return; // Unreachable.
     }
 }
+
+ParseRule rules[] = {
+    [TOKEN_LEFT_PAREN] = {grouping, NULL, PREC_NONE},
+    [TOKEN_RIGHT_PAREN] = {NULL, NULL, PREC_NONE},
+    [TOKEN_LEFT_BRACE] = {NULL, NULL, PREC_NONE},
+    [TOKEN_RIGHT_BRACE] = {NULL, NULL, PREC_NONE},
+    [TOKEN_COMMA] = {NULL, NULL, PREC_NONE},
+    [TOKEN_DOT] = {NULL, NULL, PREC_NONE},
+    [TOKEN_MINUS] = {unary, binary, PREC_TERM},
+    [TOKEN_PLUS] = {NULL, binary, PREC_TERM},
+    [TOKEN_SEMICOLON] = {NULL, NULL, PREC_NONE},
+    [TOKEN_SLASH] = {NULL, binary, PREC_FACTOR},
+    [TOKEN_STAR] = {NULL, binary, PREC_FACTOR},
+    [TOKEN_BANG] = {NULL, NULL, PREC_NONE},
+    [TOKEN_BANG_EQUAL] = {NULL, NULL, PREC_NONE},
+    [TOKEN_EQUAL] = {NULL, NULL, PREC_NONE},
+    [TOKEN_EQUAL_EQUAL] = {NULL, NULL, PREC_NONE},
+    [TOKEN_GREATER] = {NULL, NULL, PREC_NONE},
+    [TOKEN_GREATER_EQUAL] = {NULL, NULL, PREC_NONE},
+    [TOKEN_LESS] = {NULL, NULL, PREC_NONE},
+    [TOKEN_LESS_EQUAL] = {NULL, NULL, PREC_NONE},
+    [TOKEN_IDENTIFIER] = {NULL, NULL, PREC_NONE},
+    [TOKEN_STRING] = {NULL, NULL, PREC_NONE},
+    [TOKEN_NUMBER] = {number, NULL, PREC_NONE},
+    [TOKEN_AND] = {NULL, NULL, PREC_NONE},
+    [TOKEN_CLASS] = {NULL, NULL, PREC_NONE},
+    [TOKEN_ELSE] = {NULL, NULL, PREC_NONE},
+    [TOKEN_FALSE] = {NULL, NULL, PREC_NONE},
+    [TOKEN_FOR] = {NULL, NULL, PREC_NONE},
+    [TOKEN_FUN] = {NULL, NULL, PREC_NONE},
+    [TOKEN_IF] = {NULL, NULL, PREC_NONE},
+    [TOKEN_NIL] = {NULL, NULL, PREC_NONE},
+    [TOKEN_OR] = {NULL, NULL, PREC_NONE},
+    [TOKEN_PRINT] = {NULL, NULL, PREC_NONE},
+    [TOKEN_RETURN] = {NULL, NULL, PREC_NONE},
+    [TOKEN_SUPER] = {NULL, NULL, PREC_NONE},
+    [TOKEN_THIS] = {NULL, NULL, PREC_NONE},
+    [TOKEN_TRUE] = {NULL, NULL, PREC_NONE},
+    [TOKEN_VAR] = {NULL, NULL, PREC_NONE},
+    [TOKEN_WHILE] = {NULL, NULL, PREC_NONE},
+    [TOKEN_ERROR] = {NULL, NULL, PREC_NONE},
+    [TOKEN_EOF] = {NULL, NULL, PREC_NONE},
+};
 
 static void number()
 {
