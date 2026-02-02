@@ -3,7 +3,9 @@
 #include "common.h"
 #include "compiler.h"
 #include "scanner.h"
-
+#ifdef DEBUG_PRINT_CODE
+#include "debug.h"
+#endif
 typedef struct
 {
     Token current;
@@ -346,6 +348,12 @@ static void number()
 static void emitReturn()
 {
     emitByte(OP_RETURN);
+#ifdef DEBUG_PRINT_CODE
+    if (!parser.hadError)
+    {
+        disassembleChunk(currentChunk(), "code");
+    }
+#endif
 }
 
 static uint8_t makeConstant(Value value)

@@ -7,6 +7,8 @@
 // uint8_t、int32_t 等固定宽度整数类型
 #include <stdint.h>
 
+#define DEBUG_PRINT_CODE
+
 #define DEBUG_TRACE_EXECUTION
 
 #endif
