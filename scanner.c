@@ -13,21 +13,40 @@ typedef struct
 
 Scanner scanner;
 
+// 前向声明
+static bool isAtEnd();
+static char peek();
+static char peekNext();
+static char advance();
+static bool match(char expected);
+static Token makeToken(TokenType type);
+static Token errorToken(const char *message);
+static bool isDigit(char c);
+static bool isAlpha(char c);
+static void skipWhitespace();
+static Token string();
+static Token number();
+static Token identifier();
+static TokenType identifierType();
+static TokenType checkKeyword(int start, int length, const char *rest, TokenType type);
+
 void initScanner(const char *source)
 {
     scanner.start = source;
     scanner.current = source;
     scanner.line = 1;
 }
+
+// ==================== 基础辅助函数 ====================
+
 static bool isAtEnd()
 {
     return *scanner.current == '\0';
 }
 
-static char advance()
+static char peek()
 {
-    scanner.current++;
-    return scanner.current[-1];
+    return *scanner.current;
 }
 
 static char peekNext()
@@ -35,6 +54,12 @@ static char peekNext()
     if (isAtEnd())
         return '\0';
     return scanner.current[1];
+}
+
+static char advance()
+{
+    scanner.current++;
+    return scanner.current[-1];
 }
 
 static bool match(char expected)
@@ -47,6 +72,30 @@ static bool match(char expected)
     return true;
 }
 
+static bool isDigit(char c)
+{
+    return c >= '0' && c <= '9';
+}
+
+static bool isAlpha(char c)
+{
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') ||
+           c == '_';
+}
+
+// ==================== Token 生成 ====================
+
+static Token makeToken(TokenType type)
+{
+    Token token;
+    token.type = type;
+    token.start = scanner.start;
+    token.length = (int)(scanner.current - scanner.start);
+    token.line = scanner.line;
+    return token;
+}
+
 static Token errorToken(const char *message)
 {
     Token token;
@@ -57,10 +106,7 @@ static Token errorToken(const char *message)
     return token;
 }
 
-static char peek()
-{
-    return *scanner.current;
-}
+// ==================== 空白和注释处理 ====================
 
 static void skipWhitespace()
 {
@@ -98,6 +144,8 @@ static void skipWhitespace()
     }
 }
 
+// ==================== 字面量扫描 ====================
+
 static Token string()
 {
     while (peek() != '"' && !isAtEnd())
@@ -113,16 +161,6 @@ static Token string()
     // The closing quote.
     advance();
     return makeToken(TOKEN_STRING);
-}
-
-static Token makeToken(TokenType type)
-{
-    Token token;
-    token.type = type;
-    token.start = scanner.start;
-    token.length = (int)(scanner.current - scanner.start);
-    token.line = scanner.line;
-    return token;
 }
 
 static Token number()
@@ -143,10 +181,7 @@ static Token number()
     return makeToken(TOKEN_NUMBER);
 }
 
-static bool isDigit(char c)
-{
-    return c >= '0' && c <= '9';
-}
+// ==================== 关键字识别 ====================
 
 /**
  * 关键字检查函数 - 用于在词法扫描中识别保留关键字
@@ -243,18 +278,16 @@ static TokenType identifierType()
     }
     return TOKEN_IDENTIFIER;
 }
+
 static Token identifier()
 {
     while (isAlpha(peek()) || isDigit(peek()))
         advance();
     return makeToken(identifierType());
 }
-static bool isAlpha(char c)
-{
-    return (c >= 'a' && c <= 'z') ||
-           (c >= 'A' && c <= 'Z') ||
-           c == '_';
-}
+
+// ==================== 主扫描函数 ====================
+
 Token scanToken()
 {
     skipWhitespace();

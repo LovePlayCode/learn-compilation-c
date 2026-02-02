@@ -1,6 +1,4 @@
 #include <stdio.h>
-
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "vm.h"
@@ -55,9 +53,8 @@ static void repl() {
     }
 }
 
-int main(void) {
+int main(int argc, const char* argv[]) {
     initVM();
-    // 替换部分开始
     if (argc == 1) {
         repl();
     } else if (argc == 2) {
