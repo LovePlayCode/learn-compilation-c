@@ -51,7 +51,10 @@ void push(Value value)
 void freeVM()
 {
 }
-
+static bool isFalsey(Value value)
+{
+    return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
+}
 /**
  * 任何指令的第一个字节都是操作码。给定一个操作码，我们需要找到实现该指令语义的正确的 C 代码，这个过程被称为解码或指令分派。
  ***/
@@ -131,6 +134,8 @@ vm.ip = 当前执行到的指令地址
         case OP_DIVIDE:
             BINARY_OP(NUMBER_VAL, /);
             break;
+        case OP_NOT:
+            push(BOOL_VAL(isFalsey(pop())));
             break;
         case OP_NEGATE:
             if (!IS_NUMBER(peek(0)))
