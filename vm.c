@@ -122,6 +122,19 @@ vm.ip = 当前执行到的指令地址
         case OP_FALSE:
             push(BOOL_VAL(false));
             break;
+        case OP_EQUAL:
+        {
+            Value b = pop();
+            Value a = pop();
+            push(BOOL_VAL(valuesEqual(a, b)));
+            break;
+        }
+        case OP_GREATER:
+            BINARY_OP(BOOL_VAL, >);
+            break;
+        case OP_LESS:
+            BINARY_OP(BOOL_VAL, <);
+            break;
         case OP_ADD:
             BINARY_OP(NUMBER_VAL, +);
             break;
