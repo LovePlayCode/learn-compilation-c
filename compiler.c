@@ -101,6 +101,26 @@ static void errorAtCurrent(const char *message)
 
 // ==================== 词法辅助 ====================
 
+/**
+ * advance() 函数的作用是"前进"到下一个 token。
+ * 它维护两个状态：
+ * - parser.previous: 上一个已消耗的 token
+ * - parser.current:  当前要处理的 token
+ *
+ * 工作流程：
+ * 1. parser.previous = parser.current  (保存旧的当前token)
+ * 2. parser.current = scanToken()      (从扫描器读取新token)
+ *
+ * 这使得在任何规则函数中，parser.previous 总是指向刚被"消耗"的 token。
+ * 例如在 number() 中，parser.previous 会指向数字token。
+ *
+ * 初始化的重要性：
+ * 在 compile() 中，第一个 advance() 的目的是初始化 parser.current，
+ * 因为在进入解析前，parser.current 处于未初始化状态。
+ * 只有调用了这第一个 advance()，parser.current 才会有第一个真正的 token，
+ * 然后 parsePrecedence() 内的 advance() 才能正确推进，
+ * 同时把第一个 token 保存到 parser.previous。
+ */
 static void advance()
 {
     parser.previous = parser.current;
@@ -447,7 +467,11 @@ bool compile(const char *source, Chunk *chunk)
     compilingChunk = chunk;
     parser.hadError = false;
     parser.panicMode = false;
+    // 第一次 advance()：初始化 Parser 状态，加载第一个 token 到 parser.current
+    // 这是必需的，否则 parser.current 处于未初始化状态
     advance();
+    // 现在 parser.current 有了第一个真正的 token，可以开始解析表达式
+    // parsePrecedence() 会调用第二个 advance()，将第一个 token 推到 parser.previous
     expression();
     consume(TOKEN_EOF, "Expect end of expression.");
     endCompiler();
