@@ -17,6 +17,7 @@ static void resetStack()
 void initVM()
 {
     resetStack();
+    vm.objects = NULL;
 }
 
 Value pop()
@@ -52,6 +53,7 @@ void push(Value value)
 
 void freeVM()
 {
+    freeObjects();
 }
 static bool isFalsey(Value value)
 {
