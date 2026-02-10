@@ -30,6 +30,7 @@ static Obj *allocateObject(size_t size, ObjType type)
  */
 ObjString *copyString(const char *chars, int length)
 {
+    uint32_t hash = hashString(chars, length);
     // 在堆上分配内存，+1 是为了存储字符串终止符 '\0'
     char *heapChars = ALLOCATE(char, length + 1);
     // 复制源字符串的内容到堆内存
@@ -37,7 +38,7 @@ ObjString *copyString(const char *chars, int length)
     // 添加 C 字符串终止符
     heapChars[length] = '\0';
     // 创建并返回 ObjString 对象
-    return allocateString(heapChars, length);
+    return allocateString(heapChars, length, hash);
 }
 
 void printObject(Value value)
@@ -50,15 +51,30 @@ void printObject(Value value)
     }
 }
 
-static ObjString *allocateString(char *chars, int length)
+static ObjString *allocateString(char *chars, int length,
+                                 uint32_t hash)
 {
     ObjString *string = ALLOCATE_OBJ(ObjString, OBJ_STRING);
     string->length = length;
     string->chars = chars;
+    string->hash = hash;
     return string;
+}
+
+static uint32_t hashString(const char *key, int length)
+{
+    uint32_t hash = 2166136261u;
+    for (int i = 0; i < length; i++)
+    {
+        hash ^= (uint8_t)key[i];
+        hash *= 16777619;
+    }
+    return hash;
 }
 
 ObjString *takeString(char *chars, int length)
 {
-    return allocateString(chars, length);
+    uint32_t hash = hashString(chars, length);
+
+    return allocateString(chars, length, hash);
 }
