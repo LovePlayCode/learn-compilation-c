@@ -4,7 +4,9 @@
 #include "debug.h"
 #include "compiler.h"
 #include <stdarg.h>
-
+#include <string.h>
+#include "object.h"
+#include "memory.h"
 VM vm;
 
 static void resetStack()
@@ -55,6 +57,22 @@ static bool isFalsey(Value value)
 {
     return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
 }
+
+static void concatenate()
+{
+    ObjString *b = AS_STRING(pop());
+    ObjString *a = AS_STRING(pop());
+
+    int length = a->length + b->length;
+    char *chars = ALLOCATE(char, length + 1);
+    memcpy(chars, a->chars, a->length);
+    memcpy(chars + a->length, b->chars, b->length);
+    chars[length] = '\0';
+
+    ObjString *result = takeString(chars, length);
+    push(OBJ_VAL(result));
+}
+
 /**
  * 任何指令的第一个字节都是操作码。给定一个操作码，我们需要找到实现该指令语义的正确的 C 代码，这个过程被称为解码或指令分派。
  ***/
@@ -136,8 +154,25 @@ vm.ip = 当前执行到的指令地址
             BINARY_OP(BOOL_VAL, <);
             break;
         case OP_ADD:
-            BINARY_OP(NUMBER_VAL, +);
+        {
+            if (IS_STRING(peek(0)) && IS_STRING(peek(1)))
+            {
+                concatenate();
+            }
+            else if (IS_NUMBER(peek(0)) && IS_NUMBER(peek(1)))
+            {
+                double b = AS_NUMBER(pop());
+                double a = AS_NUMBER(pop());
+                push(NUMBER_VAL(a + b));
+            }
+            else
+            {
+                runtimeError(
+                    "Operands must be two numbers or two strings.");
+                return INTERPRET_RUNTIME_ERROR;
+            }
             break;
+        }
         case OP_SUBTRACT:
             BINARY_OP(NUMBER_VAL, -);
             break;
