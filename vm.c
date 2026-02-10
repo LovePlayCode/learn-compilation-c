@@ -51,8 +51,29 @@ void push(Value value)
     vm.stackTop++;
 }
 
+/**
+ * 虚拟机清理函数 - 释放所有动态分配的资源
+ *
+ * 执行流程：
+ * 1. VM 通过 vm.objects 维护一个对象链表（单向链表）
+ *    vm.objects → [字符串A] → [字符串B] → [字符串C] → NULL
+ *
+ * 2. freeObjects() 遍历链表释放每个对象：
+ *    - 从链表头开始遍历
+ *    - 保存 next 指针（避免访问已释放的内存）
+ *    - 调用 freeObject() 释放当前对象（包括字符数组和对象结构体本身）
+ *    - 移动到下一个节点
+ *
+ * 调用时机：程序退出前，在 main() 函数中调用
+ *
+ * 设计目的：
+ * - 防止内存泄漏：确保所有堆对象被正确释放
+ * - 集中管理：通过链表追踪所有创建的对象
+ * - 为垃圾回收做准备：这是实现 GC 的基础架构
+ */
 void freeVM()
 {
+    // 释放虚拟机管理的所有堆对象（遍历 vm.objects 链表）
     freeObjects();
 }
 static bool isFalsey(Value value)
