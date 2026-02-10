@@ -61,13 +61,16 @@ static ObjString *allocateString(char *chars, int length,
     return string;
 }
 
+// FNV-1a 哈希函数：将字符串转换为 32 位哈希值
+// 用于哈希表中的字符串键散列，特点是实现简单、速度快、分布均匀
+// FNV-1a 先异或后乘（区别于 FNV-1 的先乘后异或），雪崩效应更好
 static uint32_t hashString(const char *key, int length)
 {
-    uint32_t hash = 2166136261u;
+    uint32_t hash = 2166136261u; // FNV offset basis (0x811c9dc5)
     for (int i = 0; i < length; i++)
     {
-        hash ^= (uint8_t)key[i];
-        hash *= 16777619;
+        hash ^= (uint8_t)key[i]; // 将当前字节与哈希值异或
+        hash *= 16777619;        // 乘以 FNV 素数 (0x01000193)
     }
     return hash;
 }
