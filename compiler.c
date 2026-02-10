@@ -202,6 +202,15 @@ static void number()
     emitConstant(NUMBER_VAL(value));
 }
 
+static void string()
+{
+    // 去掉字符串两端的引号
+    // parser.previous.start + 1: 跳过开头的 " 引号
+    // parser.previous.length - 2: 减去首尾两个引号的长度
+    // 例如: "hello" -> hello (从索引1开始，复制5个字符)
+    emitConstant(OBJ_VAL(copyString(parser.previous.start + 1,
+                                    parser.previous.length - 2)));
+}
 static void grouping()
 {
     expression();
@@ -322,7 +331,7 @@ ParseRule rules[] = {
     [TOKEN_LESS] = {NULL, binary, PREC_COMPARISON},
     [TOKEN_LESS_EQUAL] = {NULL, binary, PREC_COMPARISON},
     [TOKEN_IDENTIFIER] = {NULL, NULL, PREC_NONE},
-    [TOKEN_STRING] = {NULL, NULL, PREC_NONE},
+    [TOKEN_STRING] = {string, NULL, PREC_NONE},
     [TOKEN_NUMBER] = {number, NULL, PREC_NONE},
     [TOKEN_AND] = {NULL, NULL, PREC_NONE},
     [TOKEN_CLASS] = {NULL, NULL, PREC_NONE},
