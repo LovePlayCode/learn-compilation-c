@@ -64,19 +64,7 @@ bool valuesEqual(Value a, Value b)
     case VAL_NUMBER:
         return AS_NUMBER(a) == AS_NUMBER(b);
     case VAL_OBJ:
-    {
-        // 从 Value 中提取字符串对象指针
-        ObjString *aString = AS_STRING(a);
-        ObjString *bString = AS_STRING(b);
-        // 字符串比较分两步（性能优化）：
-        // 1. 先比较长度（O(1) 操作），长度不同则直接返回 false（短路求值）
-        // 2. 长度相同时，使用 memcmp 逐字节比较字符串内容
-        // 例如: "hello" vs "world" -> 长度都是5，但 memcmp 返回非0，结果为 false
-        //       "hello" vs "hi" -> 长度不同（5 != 2），直接返回 false，无需比较内容
-        return aString->length == bString->length &&
-               memcmp(aString->chars, bString->chars,
-                      aString->length) == 0;
-    }
+        return AS_OBJ(a) == AS_OBJ(b);
     default:
         return false; // Unreachable.
     }

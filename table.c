@@ -76,6 +76,9 @@ static void adjustCapacity(Table *table, int capacity)
         entries[i].value = NIL_VAL;
     }
 
+    // 哈希表的“自愈机制”
+    table->count = 0;
+
     // 3. 遍历旧数组，将有效条目重新插入新数组
     for (int i = 0; i < table->capacity; i++)
     {
@@ -87,6 +90,7 @@ static void adjustCapacity(Table *table, int capacity)
         Entry *dest = findEntry(entries, capacity, entry->key);
         dest->key = entry->key;
         dest->value = entry->value;
+        table->count++;
     }
     // 4. 释放旧数组，将 table 指向新数组
     FREE_ARRAY(Entry, table->entries, table->capacity);
@@ -103,7 +107,8 @@ bool tableSet(Table *table, ObjString *key, Value value)
     }
     Entry *entry = findEntry(table->entries, table->capacity, key);
     bool isNewKey = entry->key == NULL;
-    if (isNewKey)
+    // 墓碑不计数，同时满足这两个条件才增加计数
+    if (isNewKey && IS_NIL(entry->value))
         table->count++;
 
     entry->key = key;
@@ -150,4 +155,32 @@ bool tableDelete(Table *table, ObjString *key)
     entry->key = NULL;
     entry->value = BOOL_VAL(true);
     return true;
+}
+
+ObjString *tableFindString(Table *table, const char *chars,
+                           int length, uint32_t hash)
+{
+    if (table->count == 0)
+        return NULL;
+
+    uint32_t index = hash % table->capacity;
+    for (;;)
+    {
+        Entry *entry = &table->entries[index];
+        if (entry->key == NULL)
+        {
+            // Stop if we find an empty non-tombstone entry.
+            if (IS_NIL(entry->value))
+                return NULL;
+        }
+        else if (entry->key->length == length &&
+                 entry->key->hash == hash &&
+                 memcmp(entry->key->chars, chars, length) == 0)
+        {
+            // We found it.
+            return entry->key;
+        }
+
+        index = (index + 1) % table->capacity;
+    }
 }

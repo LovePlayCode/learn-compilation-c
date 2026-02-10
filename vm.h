@@ -6,6 +6,7 @@
 
 #include "chunk.h"
 #include "value.h"
+#include "table.h"
 
 #define STACK_MAX 256
 
@@ -20,6 +21,7 @@ typedef struct
   // 栈顶指针
   // 指针指向数组中栈顶元素的下一个元素位置
   Value *stackTop;
+  Table strings;
   Obj *objects;
 } VM;
 

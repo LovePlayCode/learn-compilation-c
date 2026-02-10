@@ -18,6 +18,7 @@ void initVM()
 {
     resetStack();
     vm.objects = NULL;
+    initTable(&vm.strings);
 }
 
 Value pop()
@@ -73,6 +74,8 @@ void push(Value value)
  */
 void freeVM()
 {
+    freeTable(&vm.strings);
+
     // 释放虚拟机管理的所有堆对象（遍历 vm.objects 链表）
     freeObjects();
 }
