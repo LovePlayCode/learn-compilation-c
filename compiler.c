@@ -30,7 +30,7 @@ typedef enum
     PREC_PRIMARY
 } Precedence;
 
-typedef void (*ParseFn)();
+typedef void (*ParseFn)(bool canAssign);
 
 typedef struct
 {
@@ -47,26 +47,22 @@ static void parsePrecedence(Precedence precedence);
 static ParseRule *getRule(TokenType type);
 static void errorAt(Token *token, const char *message);
 static void advance();
+static void consume(TokenType type, const char *message);
 static void endCompiler();
 static void emitReturn();
 static void emitConstant(Value value);
-static void number();
-static void grouping();
-static void unary();
-static void binary();
-static void parsePrecedence(Precedence precedence);
-
-static uint8_t parseVariable(const char *errorMessage)
-{
-    consume(TOKEN_IDENTIFIER, errorMessage);
-    return identifierConstant(&parser.previous);
-}
-
-static uint8_t identifierConstant(Token *name)
-{
-    return makeConstant(OBJ_VAL(copyString(name->start,
-                                           name->length)));
-}
+static uint8_t makeConstant(Value value);
+static uint8_t identifierConstant(Token *name);
+static uint8_t parseVariable(const char *errorMessage);
+static void varDeclaration();
+static void defineVariable(uint8_t global);
+static void synchronize();
+static void expressionStatement();
+static void number(bool canAssign);
+static void string(bool canAssign);
+static void grouping(bool canAssign);
+static void unary(bool canAssign);
+static void binary(bool canAssign);
 
 Parser parser;
 Chunk *compilingChunk;
@@ -222,15 +218,28 @@ static void endCompiler()
     emitReturn();
 }
 
+static uint8_t identifierConstant(Token *name)
+{
+    return makeConstant(OBJ_VAL(copyString(name->start,
+                                           name->length)));
+}
+
+static uint8_t parseVariable(const char *errorMessage)
+{
+    consume(TOKEN_IDENTIFIER, errorMessage);
+    return identifierConstant(&parser.previous);
+}
+
 // ==================== 解析规则表 ====================
 
-static void number()
+static void number(bool canAssign)
 {
+
     double value = strtod(parser.previous.start, NULL);
     emitConstant(NUMBER_VAL(value));
 }
 
-static void string()
+static void string(bool canAssign)
 {
     // 去掉字符串两端的引号
     // parser.previous.start + 1: 跳过开头的 " 引号
@@ -259,7 +268,7 @@ static void variable(bool canAssign)
     namedVariable(parser.previous, canAssign);
 }
 
-static void grouping()
+static void grouping(bool canAssign)
 {
     expression();
     consume(TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
@@ -270,7 +279,7 @@ static void grouping()
    然后弹出该值，对其取负，并将结果压入栈中。
    按照源代码中的顺序对程序进行解析，并按照执行顺序对其重新排序。
  */
-static void unary()
+static void unary(bool canAssign)
 {
     TokenType operatorType = parser.previous.type;
 
@@ -293,8 +302,9 @@ static void unary()
     }
 }
 
-static void binary()
+static void binary(bool canAssign)
 {
+
     TokenType operatorType = parser.previous.type;
     // 表驱动语法，通过 getRule() 查表 + precedence + 1，Pratt 解析器在解析右操作数时，精准地"只吃该吃的表达式"，从而让一个 binary() 函数正确处理所有不同优先级的二元运算符。
     ParseRule *rule = getRule(operatorType);
@@ -339,7 +349,7 @@ static void binary()
     }
 }
 
-static void literal()
+static void literal(bool canAssign)
 {
     switch (parser.previous.type)
     {
@@ -500,8 +510,6 @@ static void parsePrecedence(Precedence precedence)
         return;
     }
 
-    prefixRule();
-
     // canAssign 由调用时传入的优先级决定：
     // - expression() 传入 PREC_ASSIGNMENT → canAssign = true（允许赋值）
     // - binary() 解析右操作数时传入更高优先级 → canAssign = false（禁止赋值）
@@ -513,7 +521,7 @@ static void parsePrecedence(Precedence precedence)
     {
         advance();
         ParseFn infixRule = getRule(parser.previous.type)->infix;
-        infixRule();
+        infixRule(canAssign);
     }
     // 兜底检查：捕获非法赋值目标（如 a * b = 3;）。
     // 解析 a * b = 3; 时，最外层 canAssign = true，但 b 的 namedVariable
