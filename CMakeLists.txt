@@ -16,4 +16,6 @@ add_executable(learn_compilation_c main.c
         vm.h
         vm.c
         compiler.c
-        scanner.c)
+        scanner.c
+        object.c
+        table.c)

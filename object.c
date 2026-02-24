@@ -9,6 +9,9 @@
 #define ALLOCATE_OBJ(type, objectType) \
     (type *)allocateObject(sizeof(type), objectType)
 
+static ObjString *allocateString(char *chars, int length, uint32_t hash);
+static uint32_t hashString(const char *key, int length);
+
 static Obj *allocateObject(size_t size, ObjType type)
 {
     Obj *object = (Obj *)reallocate(NULL, 0, size);
