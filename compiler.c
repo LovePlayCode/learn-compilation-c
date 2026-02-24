@@ -54,6 +54,19 @@ static void number();
 static void grouping();
 static void unary();
 static void binary();
+static void parsePrecedence(Precedence precedence);
+
+static uint8_t parseVariable(const char *errorMessage)
+{
+    consume(TOKEN_IDENTIFIER, errorMessage);
+    return identifierConstant(&parser.previous);
+}
+
+static uint8_t identifierConstant(Token *name)
+{
+    return makeConstant(OBJ_VAL(copyString(name->start,
+                                           name->length)));
+}
 
 Parser parser;
 Chunk *compilingChunk;
@@ -226,6 +239,26 @@ static void string()
     emitConstant(OBJ_VAL(copyString(parser.previous.start + 1,
                                     parser.previous.length - 2)));
 }
+
+static void namedVariable(Token name, bool canAssign)
+{
+    uint8_t arg = identifierConstant(&name);
+    if (canAssign && match(TOKEN_EQUAL))
+    {
+        expression();
+        emitBytes(OP_SET_GLOBAL, arg);
+    }
+    else
+    {
+        emitBytes(OP_GET_GLOBAL, arg);
+    }
+}
+
+static void variable(bool canAssign)
+{
+    namedVariable(parser.previous, canAssign);
+}
+
 static void grouping()
 {
     expression();
@@ -345,7 +378,7 @@ ParseRule rules[] = {
     [TOKEN_GREATER_EQUAL] = {NULL, binary, PREC_COMPARISON},
     [TOKEN_LESS] = {NULL, binary, PREC_COMPARISON},
     [TOKEN_LESS_EQUAL] = {NULL, binary, PREC_COMPARISON},
-    [TOKEN_IDENTIFIER] = {NULL, NULL, PREC_NONE},
+    [TOKEN_IDENTIFIER] = {variable, NULL, PREC_NONE},
     [TOKEN_STRING] = {string, NULL, PREC_NONE},
     [TOKEN_NUMBER] = {number, NULL, PREC_NONE},
     [TOKEN_AND] = {NULL, NULL, PREC_NONE},
@@ -469,11 +502,27 @@ static void parsePrecedence(Precedence precedence)
 
     prefixRule();
 
+    // canAssign 由调用时传入的优先级决定：
+    // - expression() 传入 PREC_ASSIGNMENT → canAssign = true（允许赋值）
+    // - binary() 解析右操作数时传入更高优先级 → canAssign = false（禁止赋值）
+    // 它在本函数中只被赋值一次，不会从 false 变为 true。
+    bool canAssign = precedence <= PREC_ASSIGNMENT;
+    prefixRule(canAssign);
+
     while (precedence <= getRule(parser.current.type)->precedence)
     {
         advance();
         ParseFn infixRule = getRule(parser.previous.type)->infix;
         infixRule();
+    }
+    // 兜底检查：捕获非法赋值目标（如 a * b = 3;）。
+    // 解析 a * b = 3; 时，最外层 canAssign = true，但 b 的 namedVariable
+    // 收到的 canAssign = false（因为 binary() 以更高优先级解析右操作数），
+    // 不会消费 =，= 号留在 token 流中。回到最外层后由此处兜住，报出明确错误，
+    // 避免 = 号残留导致后续产生令人困惑的级联错误。
+    if (canAssign && match(TOKEN_EQUAL))
+    {
+        error("Invalid assignment target.");
     }
 }
 
@@ -492,7 +541,98 @@ static void printStatement()
 
 static void declaration()
 {
-    statement();
+    if (match(TOKEN_VAR))
+    {
+        varDeclaration();
+    }
+    else
+    {
+        statement();
+    }
+    // 使用恐慌模式下的错误恢复来减少它所报告的级联编译错误。
+    if (parser.panicMode)
+        synchronize();
+}
+
+// 编译变量声明语句（var name = "hello"; 或 var name;）
+//
+// 以 var name = "hello"; 为例，token 流: VAR name = "hello" ;
+// 进入本函数时 VAR 已被 declaration() 消费。
+//
+// 1. parseVariable() 消费 token `name`，将变量名 "name" 存入常量池，返回索引（假设为 0）
+//    常量池: [ 0: "name" ]
+//
+// 2. match(TOKEN_EQUAL) 成功 → expression() 编译 "hello"，生成 OP_CONSTANT 1
+//    常量池: [ 0: "name",  1: "hello" ]
+//    字节码: OP_CONSTANT 1          ← 将 "hello" 压入栈顶
+//    若无 = 号（如 var name;），则 emitByte(OP_NIL)，用 nil 作为默认初始值
+//
+// 3. consume(TOKEN_SEMICOLON) 消费分号
+//
+// 4. defineVariable(0) → emitBytes(OP_DEFINE_GLOBAL, 0)
+//    字节码: OP_CONSTANT 1, OP_DEFINE_GLOBAL 0
+//
+// VM 执行时：
+//   OP_CONSTANT 1       → 从常量池取 "hello" 压入栈     栈: ["hello"]
+//   OP_DEFINE_GLOBAL 0  → READ_STRING() 取常量池[0]即 "name"
+//                       → tableSet(&vm.globals, "name", pop())  栈: []
+static void varDeclaration()
+{
+    uint8_t global = parseVariable("Expect variable name.");
+
+    if (match(TOKEN_EQUAL))
+    {
+        expression();
+    }
+    else
+    {
+        emitByte(OP_NIL);
+    }
+    consume(TOKEN_SEMICOLON,
+            "Expect ';' after variable declaration.");
+
+    defineVariable(global);
+}
+
+static void defineVariable(uint8_t global)
+{
+    emitBytes(OP_DEFINE_GLOBAL, global);
+}
+
+// 恐慌模式错误恢复：当编译器遇到语法错误进入 panicMode 后，
+// 会跳过后续 token 直到找到一个"同步点"——即下一条语句的边界，
+// 从而避免一个语法错误引发大量无意义的级联错误报告。
+static void synchronize()
+{
+    // 退出恐慌模式，恢复正常的错误报告
+    parser.panicMode = false;
+
+    while (parser.current.type != TOKEN_EOF)
+    {
+        // 同步点1：刚跳过一个分号，说明上一条语句已结束，
+        // 下一个 token 是新语句的开头，可以恢复正常编译
+        if (parser.previous.type == TOKEN_SEMICOLON)
+            return;
+        // 同步点2：当前 token 是语句起始关键字，
+        // 说明已到达新语句的边界，可以从这里恢复编译
+        switch (parser.current.type)
+        {
+        case TOKEN_CLASS:
+        case TOKEN_FUN:
+        case TOKEN_VAR:
+        case TOKEN_FOR:
+        case TOKEN_IF:
+        case TOKEN_WHILE:
+        case TOKEN_PRINT:
+        case TOKEN_RETURN:
+            return;
+
+        default:; // 不是同步点，继续跳过
+        }
+
+        // 丢弃当前 token，继续向前扫描寻找同步点
+        advance();
+    }
 }
 
 static void statement()
@@ -501,6 +641,17 @@ static void statement()
     {
         printStatement();
     }
+    else
+    {
+        expressionStatement();
+    }
+}
+
+static void expressionStatement()
+{
+    expression();
+    consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
+    emitByte(OP_POP);
 }
 
 // ==================== 编译入口 ====================

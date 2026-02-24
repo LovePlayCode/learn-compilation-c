@@ -18,6 +18,7 @@ void initVM()
 {
     resetStack();
     vm.objects = NULL;
+    initTable(&vm.globals);
     initTable(&vm.strings);
 }
 
@@ -74,6 +75,8 @@ void push(Value value)
  */
 void freeVM()
 {
+    freeTable(&vm.globals);
+
     freeTable(&vm.strings);
 
     // 释放虚拟机管理的所有堆对象（遍历 vm.objects 链表）
@@ -106,6 +109,21 @@ static InterpretResult run()
 {
 #define READ_BYTE() (*vm.ip++)
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
+// 从字节码中读取一个字符串：先通过 READ_CONSTANT() 从常量池取出 Value，
+// 再用 AS_STRING() 将其转换为 ObjString* 指针。
+// 用于需要字符串操作数的指令（如 OP_DEFINE_GLOBAL），一步完成"读索引→查常量→转字符串"。
+//
+// 例: 编译 var name = "hello"; 后：
+//   常量池: [ 0: "name",  1: "hello" ]
+//   字节码: ... OP_DEFINE_GLOBAL 0 ...
+//
+// VM 执行 OP_DEFINE_GLOBAL 时调用 READ_STRING()，展开过程：
+//   1. READ_BYTE():      *vm.ip++ → 读出字节 0，ip 前进一位
+//   2. READ_CONSTANT():  vm.chunk->constants.values[0] → 取出包装了 "name" 的 Value
+//   3. AS_STRING():      (ObjString*)AS_OBJ(value) → 转换为 ObjString* 指针
+//   最终得到 ObjString { length=4, chars="name", hash=... }
+//   然后 OP_DEFINE_GLOBAL 以此为键，将栈顶值 "hello" 存入 vm.globals 哈希表
+#define READ_STRING() AS_STRING(READ_CONSTANT())
 #define BINARY_OP(valueType, op)                        \
     do                                                  \
     {                                                   \
@@ -166,6 +184,46 @@ vm.ip = 当前执行到的指令地址
         case OP_FALSE:
             push(BOOL_VAL(false));
             break;
+        // 表达式语句（如 1+2;）求值后结果会留在栈顶，
+        // 但该结果不会被后续指令使用，必须弹出以保持栈平衡
+        case OP_POP:
+            pop();
+            break;
+        case OP_GET_GLOBAL:
+        {
+            ObjString *name = READ_STRING();
+            Value value;
+            if (!tableGet(&vm.globals, name, &value))
+            {
+                runtimeError("Undefined variable '%s'.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            push(value);
+            break;
+        }
+        case OP_DEFINE_GLOBAL:
+        {
+            ObjString *name = READ_STRING();
+            tableSet(&vm.globals, name, peek(0));
+            pop();
+            break;
+        }
+        // 全局变量赋值（如 name = "world";），区别于 OP_DEFINE_GLOBAL（创建新变量）。
+        // 用 peek(0) 而非 pop() 读取新值，因为赋值是表达式，其结果值需保留在栈上。
+        // tableSet 返回 true 表示键不存在（新插入），说明变量未被 var 定义过，
+        // 此时需要 tableDelete 清除刚插入的非法条目，然后报运行时错误。
+        case OP_SET_GLOBAL:
+        {
+            ObjString *name = READ_STRING();
+            if (tableSet(&vm.globals, name, peek(0)))
+            {
+                tableDelete(&vm.globals, name);
+                runtimeError("Undefined variable '%s'.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            break;
+        }
+
         case OP_EQUAL:
         {
             Value b = pop();
@@ -234,6 +292,7 @@ vm.ip = 当前执行到的指令地址
 
 #undef READ_BYTE
 #undef READ_CONSTANT
+#undef READ_STRING
 #undef BINARY_OP
 }
 
