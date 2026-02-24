@@ -219,11 +219,14 @@ vm.ip = 当前执行到的指令地址
             }
             push(NUMBER_VAL(-AS_NUMBER(pop())));
             break;
-
-        case OP_RETURN:
+        case OP_PRINT:
         {
             printValue(pop());
             printf("\n");
+            break;
+        }
+        case OP_RETURN:
+        {
             return INTERPRET_OK;
         }
         }

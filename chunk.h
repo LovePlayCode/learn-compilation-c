@@ -20,6 +20,7 @@ typedef enum
   // 逻辑非
   OP_NOT,
   OP_NEGATE,
+  OP_PRINT,
   OP_RETURN,
 } OpCode;
 typedef struct

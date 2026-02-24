@@ -41,6 +41,8 @@ typedef struct
 
 // 前向声明
 static void expression();
+static void statement();
+static void declaration();
 static void parsePrecedence(Precedence precedence);
 static ParseRule *getRule(TokenType type);
 static void errorAt(Token *token, const char *message);
@@ -146,6 +148,19 @@ static void consume(TokenType type, const char *message)
     }
 
     errorAtCurrent(message);
+}
+
+static bool check(TokenType type)
+{
+    return parser.current.type == type;
+}
+
+static bool match(TokenType type)
+{
+    if (!check(type))
+        return false;
+    advance();
+    return true;
 }
 
 // ==================== 字节码生成 ====================
@@ -468,6 +483,26 @@ static void expression()
     parsePrecedence(PREC_ASSIGNMENT);
 }
 
+static void printStatement()
+{
+    expression();
+    consume(TOKEN_SEMICOLON, "Expect ';' after value.");
+    emitByte(OP_PRINT);
+}
+
+static void declaration()
+{
+    statement();
+}
+
+static void statement()
+{
+    if (match(TOKEN_PRINT))
+    {
+        printStatement();
+    }
+}
+
 // ==================== 编译入口 ====================
 
 bool compile(const char *source, Chunk *chunk)
@@ -481,8 +516,10 @@ bool compile(const char *source, Chunk *chunk)
     advance();
     // 现在 parser.current 有了第一个真正的 token，可以开始解析表达式
     // parsePrecedence() 会调用第二个 advance()，将第一个 token 推到 parser.previous
-    expression();
-    consume(TOKEN_EOF, "Expect end of expression.");
+    while (!match(TOKEN_EOF))
+    {
+        declaration();
+    }
     endCompiler();
     return !parser.hadError;
 }
