@@ -39,6 +39,20 @@ typedef struct
     Precedence precedence;
 } ParseRule;
 
+typedef struct
+{
+    Token name;
+    int depth;
+} Local;
+
+typedef struct
+{
+    Local locals[UINT8_COUNT];
+    // 记录了作用域中有多少局部变量(有多少数组槽在使用，还会跟踪"作用域深度")
+    int localCount;
+    int scopeDepth;
+} Compiler;
+
 // 前向声明
 static void expression();
 static void statement();
@@ -65,6 +79,7 @@ static void unary(bool canAssign);
 static void binary(bool canAssign);
 
 Parser parser;
+Compiler *current = NULL;
 Chunk *compilingChunk;
 
 static Chunk *currentChunk()
@@ -213,9 +228,26 @@ static void emitConstant(Value value)
     emitBytes(OP_CONSTANT, makeConstant(value));
 }
 
+static void initCompiler(Compiler *compiler)
+{
+    compiler->localCount = 0;
+    compiler->scopeDepth = 0;
+    current = compiler;
+}
+
 static void endCompiler()
 {
     emitReturn();
+}
+
+static void beginScope()
+{
+    current->scopeDepth++;
+}
+
+static void endScope()
+{
+    current->scopeDepth--;
 }
 
 static uint8_t identifierConstant(Token *name)
@@ -540,6 +572,16 @@ static void expression()
     parsePrecedence(PREC_ASSIGNMENT);
 }
 
+static void block()
+{
+    while (!check(TOKEN_RIGHT_BRACE) && !check(TOKEN_EOF))
+    {
+        declaration();
+    }
+
+    consume(TOKEN_RIGHT_BRACE, "Expect '}' after block.");
+}
+
 static void printStatement()
 {
     expression();
@@ -649,6 +691,12 @@ static void statement()
     {
         printStatement();
     }
+    else if (match(TOKEN_LEFT_BRACE))
+    {
+        beginScope();
+        block();
+        endScope();
+    }
     else
     {
         expressionStatement();
@@ -667,6 +715,8 @@ static void expressionStatement()
 bool compile(const char *source, Chunk *chunk)
 {
     initScanner(source);
+    Compiler compiler;
+    initCompiler(&compiler);
     compilingChunk = chunk;
     parser.hadError = false;
     parser.panicMode = false;
