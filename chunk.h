@@ -11,6 +11,10 @@ typedef enum
   OP_TRUE,
   OP_FALSE,
   OP_POP,
+  // 局部变量取值
+  OP_GET_LOCAL,
+  // 局部变量赋值
+  OP_SET_LOCAL,
   OP_GET_GLOBAL,
   OP_DEFINE_GLOBAL,
   OP_SET_GLOBAL,
