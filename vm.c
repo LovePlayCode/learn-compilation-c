@@ -302,6 +302,12 @@ vm.ip = 当前执行到的指令地址
             printf("\n");
             break;
         }
+        case OP_JUMP:
+        {
+            uint16_t offset = READ_SHORT();
+            vm.ip += offset;
+            break;
+        }
         case OP_JUMP_IF_FALSE:
         {
             uint16_t offset = READ_SHORT();

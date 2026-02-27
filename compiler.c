@@ -857,12 +857,14 @@ static void ifStatement()
     // 发射条件跳转指令：如果栈顶值为 false，则跳过 then 分支
     // 此时跳转距离未知，emitJump 先写入占位符(0xFF, 0xFF)，返回占位符的偏移量
     int thenJump = emitJump(OP_JUMP_IF_FALSE);
+    emitByte(OP_POP);
     // 编译 then 分支的语句体，字节码紧跟在跳转指令之后
     statement();
     int elseJump = emitJump(OP_JUMP);
     // then 分支编译完毕，现在可以计算跳转距离了
     // 将实际偏移量回填到之前的占位符处，使 false 时跳转到此处继续执行
     patchJump(thenJump);
+    emitByte(OP_POP);
     if (match(TOKEN_ELSE))
         statement();
     patchJump(elseJump);
