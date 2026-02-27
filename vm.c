@@ -109,6 +109,8 @@ static InterpretResult run()
 {
 #define READ_BYTE() (*vm.ip++)
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
+#define READ_SHORT() \
+    (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1]))
 // 从字节码中读取一个字符串：先通过 READ_CONSTANT() 从常量池取出 Value，
 // 再用 AS_STRING() 将其转换为 ObjString* 指针。
 // 用于需要字符串操作数的指令（如 OP_DEFINE_GLOBAL），一步完成"读索引→查常量→转字符串"。
@@ -249,6 +251,11 @@ vm.ip = 当前执行到的指令地址
         case OP_LESS:
             BINARY_OP(BOOL_VAL, <);
             break;
+        // OP_ADD 是零操作数（zero-operand）的栈式指令，
+        // 不需要从字节码流中读取额外字节，因此不需要移动 ip。
+        // 操作数全部来自栈（pop两次），结果也压回栈（push一次）。
+        // 此时 ip 已被 switch(instruction = READ_BYTE()) 移过操作码，
+        // 正好指向下一条指令，无需再动。
         case OP_ADD:
         {
             if (IS_STRING(peek(0)) && IS_STRING(peek(1)))
@@ -295,6 +302,13 @@ vm.ip = 当前执行到的指令地址
             printf("\n");
             break;
         }
+        case OP_JUMP_IF_FALSE:
+        {
+            uint16_t offset = READ_SHORT();
+            if (isFalsey(peek(0)))
+                vm.ip += offset;
+            break;
+        }
         case OP_RETURN:
         {
             return INTERPRET_OK;
@@ -303,6 +317,7 @@ vm.ip = 当前执行到的指令地址
     }
 
 #undef READ_BYTE
+#undef READ_SHORT
 #undef READ_CONSTANT
 #undef READ_STRING
 #undef BINARY_OP

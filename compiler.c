@@ -846,16 +846,26 @@ static void expressionStatement()
     emitByte(OP_POP);
 }
 
+// 编译 if 语句，使用 backpatching（回填）技术处理前向跳转
 static void ifStatement()
 {
+    // 解析 if (condition) 语法结构
     consume(TOKEN_LEFT_PAREN, "Expect '(' after 'if'.");
-    expression();
+    expression(); // 编译条件表达式，运行时结果会被压入栈顶
     consume(TOKEN_RIGHT_PAREN, "Expect ')' after condition.");
 
+    // 发射条件跳转指令：如果栈顶值为 false，则跳过 then 分支
+    // 此时跳转距离未知，emitJump 先写入占位符(0xFF, 0xFF)，返回占位符的偏移量
     int thenJump = emitJump(OP_JUMP_IF_FALSE);
+    // 编译 then 分支的语句体，字节码紧跟在跳转指令之后
     statement();
-
+    int elseJump = emitJump(OP_JUMP);
+    // then 分支编译完毕，现在可以计算跳转距离了
+    // 将实际偏移量回填到之前的占位符处，使 false 时跳转到此处继续执行
     patchJump(thenJump);
+    if (match(TOKEN_ELSE))
+        statement();
+    patchJump(elseJump);
 }
 
 // ==================== 编译入口 ====================
