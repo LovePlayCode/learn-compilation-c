@@ -201,6 +201,19 @@ static void emitBytes(uint8_t byte1, uint8_t byte2)
     emitByte(byte2);
 }
 
+static void emitLoop(int loopStart)
+{
+    emitByte(OP_LOOP);
+
+    // +2是考虑到了OP_LOOP指令自身操作数的大小，这个操作数我们也需要跳过。
+    int offset = currentChunk()->count - loopStart + 2;
+    if (offset > UINT16_MAX)
+        error("Loop body too large.");
+
+    emitByte((offset >> 8) & 0xff);
+    emitByte(offset & 0xff);
+}
+
 // 发射一条跳转指令，并预留两个字节的占位符用于后续回填跳转偏移量（backpatching）。
 // 使用两个字节（16位）表示偏移量，最大可跳转 65535 字节，在紧凑性和跳转范围间取得平衡。
 static int emitJump(uint8_t instruction)
@@ -736,6 +749,22 @@ static void printStatement()
     emitByte(OP_PRINT);
 }
 
+static void whileStatement()
+{
+    // 代码的初始位置，作为循环的起点，供 emitLoop() 使用
+    int loopStart = currentChunk()->count;
+    consume(TOKEN_LEFT_PAREN, "Expect '(' after 'while'.");
+    expression();
+    consume(TOKEN_RIGHT_PAREN, "Expect ')' after condition.");
+
+    int exitJump = emitJump(OP_JUMP_IF_FALSE);
+    emitByte(OP_POP);
+    statement();
+    emitLoop(loopStart);
+    patchJump(exitJump);
+    emitByte(OP_POP);
+}
+
 static void declaration()
 {
     if (match(TOKEN_VAR))
@@ -856,6 +885,10 @@ static void statement()
     else if (match(TOKEN_IF))
     {
         ifStatement();
+    }
+    else if (match(TOKEN_WHILE))
+    {
+        whileStatement();
     }
     else if (match(TOKEN_LEFT_BRACE))
     {
