@@ -882,6 +882,11 @@ static void statement()
     {
         printStatement();
     }
+    else if (match(TOKEN_FOR))
+    {
+        forStatement();
+        // 新增部分结束
+    }
     else if (match(TOKEN_IF))
     {
         ifStatement();
@@ -907,6 +912,87 @@ static void expressionStatement()
     expression();
     consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
     emitByte(OP_POP);
+}
+
+static void forStatement()
+{
+    // 有变量存在，将变量的作用域限制在 for 循环内部
+    beginScope();
+    consume(TOKEN_LEFT_PAREN, "Expect '(' after 'for'.");
+    /**
+     * 这是 for 循环初始化子句的编译，处理 for ( 后面的第一个部分。for 循环有三种写法：
+
+  for (;          ...)   → 没有初始化
+  for (var i = 0; ...)   → 变量声明
+  for (i = 0;     ...)   → 表达式语句（通常是赋值）
+
+  逐段对应：
+
+  if (match(TOKEN_SEMICOLON))
+  {
+      // for (; ...) — 直接是分号，没有初始化，什么都不做
+  }
+  else if (match(TOKEN_VAR))
+  {
+      // for (var i = 0; ...) — 声明一个新变量
+      varDeclaration();
+  }
+  else
+  {
+      // for (i = 0; ...) — 普通表达式语句（赋值等）
+      // 用 expressionStatement 而不是 expression，
+      // 因为它会消费分号并生成 OP_POP 丢弃表达式的值
+      expressionStatement();
+  }
+
+  第三种用 expressionStatement() 而不是 expression() 有两个原因：
+  1. 它会自动消费结尾的 ;
+  2. 它会生成 OP_POP 丢弃表达式的结果值（初始化子句的值没人需要）
+     */
+    if (match(TOKEN_SEMICOLON))
+    {
+        // No initializer.
+    }
+    else if (match(TOKEN_VAR))
+    {
+        varDeclaration();
+    }
+    else
+    {
+        expressionStatement();
+    }
+    int loopStart = currentChunk()->count;
+    int exitJump = -1;
+    if (!match(TOKEN_SEMICOLON))
+    {
+        expression();
+        consume(TOKEN_SEMICOLON, "Expect ';' after loop condition.");
+
+        // Jump out of the loop if the condition is false.
+        exitJump = emitJump(OP_JUMP_IF_FALSE);
+        emitByte(OP_POP); // Condition.
+    }
+    if (!match(TOKEN_RIGHT_PAREN))
+    {
+        int bodyJump = emitJump(OP_JUMP);
+        int incrementStart = currentChunk()->count;
+        expression();
+        emitByte(OP_POP);
+        consume(TOKEN_RIGHT_PAREN, "Expect ')' after for clauses.");
+
+        emitLoop(loopStart);
+        loopStart = incrementStart;
+        patchJump(bodyJump);
+    }
+
+    statement();
+    emitLoop(loopStart);
+    if (exitJump != -1)
+    {
+        patchJump(exitJump);
+        emitByte(OP_POP); // Condition.
+    }
+    endScope();
 }
 
 // 编译 if 语句，使用 backpatching（回填）技术处理前向跳转
