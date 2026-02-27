@@ -201,6 +201,20 @@ static void emitBytes(uint8_t byte1, uint8_t byte2)
     emitByte(byte2);
 }
 
+// 发射一条跳转指令，并预留两个字节的占位符用于后续回填跳转偏移量（backpatching）。
+// 使用两个字节（16位）表示偏移量，最大可跳转 65535 字节，在紧凑性和跳转范围间取得平衡。
+static int emitJump(uint8_t instruction)
+{
+    // 写入跳转指令操作码（如 OP_JUMP、OP_JUMP_IF_FALSE）
+    emitByte(instruction);
+    // 写入两个字节的占位符 0xff，此时还不知道跳转距离，后续由 patchJump 回填。
+    // code 数组类型为 uint8_t，单个元素只能存 1 字节，所以 16 位偏移量需要拆成两个字节存储。
+    emitByte(0xff);
+    emitByte(0xff);
+    // 返回占位符第一个字节在 code 数组中的索引，供 patchJump 定位并回填。
+    return currentChunk()->count - 2;
+}
+
 static void emitReturn()
 {
     emitByte(OP_RETURN);
@@ -227,6 +241,28 @@ static uint8_t makeConstant(Value value)
 static void emitConstant(Value value)
 {
     emitBytes(OP_CONSTANT, makeConstant(value));
+}
+
+// 回填 emitJump 预留的跳转偏移量占位符。
+// 在编译完跳转目标代码后调用，将真正的跳转距离写回 code 数组中之前预留的位置。
+static void patchJump(int offset)
+{
+    // 计算跳转距离：从占位符之后到当前位置的字节数。
+    // -2 是因为 VM 读完两个占位符字节后 IP 已指向其后方，偏移量应从那里算起。
+    int jump = currentChunk()->count - offset - 2;
+
+    if (jump > UINT16_MAX)
+    {
+        error("Too much code to jump over.");
+    }
+
+    // 将 16 位跳转距离以大端序写回 code 数组，覆盖之前的 0xff 占位符。
+    // 例如 jump = 0x0A1B:
+    //   (jump >> 8) & 0xff → 取高 8 位 → 0x0A → 存入 code[offset]
+    //   jump & 0xff        → 取低 8 位 → 0x1B → 存入 code[offset+1]
+    // VM 读取时通过 (code[offset] << 8) | code[offset+1] 拼回完整的 16 位值。
+    currentChunk()->code[offset] = (jump >> 8) & 0xff;
+    currentChunk()->code[offset + 1] = jump & 0xff;
 }
 
 static void initCompiler(Compiler *compiler)
@@ -787,6 +823,10 @@ static void statement()
     {
         printStatement();
     }
+    else if (match(TOKEN_IF))
+    {
+        ifStatement();
+    }
     else if (match(TOKEN_LEFT_BRACE))
     {
         beginScope();
@@ -804,6 +844,18 @@ static void expressionStatement()
     expression();
     consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
     emitByte(OP_POP);
+}
+
+static void ifStatement()
+{
+    consume(TOKEN_LEFT_PAREN, "Expect '(' after 'if'.");
+    expression();
+    consume(TOKEN_RIGHT_PAREN, "Expect ')' after condition.");
+
+    int thenJump = emitJump(OP_JUMP_IF_FALSE);
+    statement();
+
+    patchJump(thenJump);
 }
 
 // ==================== 编译入口 ====================
