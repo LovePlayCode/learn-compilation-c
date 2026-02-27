@@ -386,6 +386,26 @@ static void number(bool canAssign)
     emitConstant(NUMBER_VAL(value));
 }
 
+// 编译 or 运算符，实现短路求值（short-circuit evaluation）
+// 进入时左操作数已编译完毕，其值在栈顶
+static void or_(bool canAssign)
+{
+    // 如果左操作数为 false，跳到右操作数处继续求值
+    int elseJump = emitJump(OP_JUMP_IF_FALSE);
+    // 如果左操作数为 true（没跳走），直接跳到末尾，
+    // 保留左操作数的值作为整个 or 表达式的结果——这就是短路
+    int endJump = emitJump(OP_JUMP);
+
+    // false 路径跳到这里，左操作数为 false 已无用，弹掉它
+    patchJump(elseJump);
+    emitByte(OP_POP);
+
+    // 编译右操作数，其结果压栈，作为整个 or 表达式的值
+    parsePrecedence(PREC_OR);
+    // true 路径（短路）的跳转目标回填到这里，两条路径汇合
+    patchJump(endJump);
+}
+
 static void string(bool canAssign)
 {
     // 去掉字符串两端的引号
@@ -550,7 +570,7 @@ ParseRule rules[] = {
     [TOKEN_IDENTIFIER] = {variable, NULL, PREC_NONE},
     [TOKEN_STRING] = {string, NULL, PREC_NONE},
     [TOKEN_NUMBER] = {number, NULL, PREC_NONE},
-    [TOKEN_AND] = {NULL, NULL, PREC_NONE},
+    [TOKEN_AND] = {NULL, and_, PREC_AND},
     [TOKEN_CLASS] = {NULL, NULL, PREC_NONE},
     [TOKEN_ELSE] = {NULL, NULL, PREC_NONE},
     [TOKEN_FALSE] = {literal, NULL, PREC_NONE},
@@ -558,7 +578,7 @@ ParseRule rules[] = {
     [TOKEN_FUN] = {NULL, NULL, PREC_NONE},
     [TOKEN_IF] = {NULL, NULL, PREC_NONE},
     [TOKEN_NIL] = {literal, NULL, PREC_NONE},
-    [TOKEN_OR] = {NULL, NULL, PREC_NONE},
+    [TOKEN_OR] = {NULL, or_, PREC_OR},
     [TOKEN_PRINT] = {NULL, NULL, PREC_NONE},
     [TOKEN_RETURN] = {NULL, NULL, PREC_NONE},
     [TOKEN_SUPER] = {NULL, NULL, PREC_NONE},
@@ -779,6 +799,16 @@ static void defineVariable(uint8_t global)
         return;
     }
     emitBytes(OP_DEFINE_GLOBAL, global);
+}
+
+static void and_(bool canAssign)
+{
+    int endJump = emitJump(OP_JUMP_IF_FALSE);
+
+    emitByte(OP_POP);
+    parsePrecedence(PREC_AND);
+
+    patchJump(endJump);
 }
 
 // 恐慌模式错误恢复：当编译器遇到语法错误进入 panicMode 后，
