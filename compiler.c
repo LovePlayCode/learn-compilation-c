@@ -46,8 +46,16 @@ typedef struct
     int depth;
 } Local;
 
+typedef enum
+{
+    TYPE_FUNCTION,
+    TYPE_SCRIPT
+} FunctionType;
+
 typedef struct
 {
+    ObjFunction *function;
+    FunctionType type;
     Local locals[UINT8_COUNT];
     // 记录了作用域中有多少局部变量(有多少数组槽在使用，还会跟踪"作用域深度")
     int localCount;
@@ -85,7 +93,7 @@ Chunk *compilingChunk;
 
 static Chunk *currentChunk()
 {
-    return compilingChunk;
+    return &current->function->chunk;
 }
 
 // ==================== 错误处理 ====================
@@ -278,16 +286,36 @@ static void patchJump(int offset)
     currentChunk()->code[offset + 1] = jump & 0xff;
 }
 
-static void initCompiler(Compiler *compiler)
+static void initCompiler(Compiler *compiler, FunctionType type)
 {
+    compiler->function = NULL;
+    compiler->type = type;
     compiler->localCount = 0;
     compiler->scopeDepth = 0;
+    compiler->function = newFunction();
     current = compiler;
+    Local *local = &current->locals[current->localCount++];
+    local->depth = 0;
+    local->name.start = "";
+    local->name.length = 0;
 }
 
-static void endCompiler()
+static ObjFunction *endCompiler()
 {
     emitReturn();
+    ObjFunction *function = current->function;
+#ifdef DEBUG_PRINT_CODE
+    if (!parser.hadError)
+    {
+        // 替换部分开始
+        disassembleChunk(currentChunk(), function->name != NULL
+                                             ? function->name->chars
+                                             : "<script>");
+        // 替换部分结束
+    }
+#endif
+
+    return function;
 }
 
 static void beginScope()
@@ -1021,12 +1049,11 @@ static void ifStatement()
 
 // ==================== 编译入口 ====================
 
-bool compile(const char *source, Chunk *chunk)
+ObjFunction *compile(const char *source)
 {
     initScanner(source);
     Compiler compiler;
-    initCompiler(&compiler);
-    compilingChunk = chunk;
+    initCompiler(&compiler, TYPE_SCRIPT);
     parser.hadError = false;
     parser.panicMode = false;
     // 第一次 advance()：初始化 Parser 状态，加载第一个 token 到 parser.current
@@ -1038,6 +1065,6 @@ bool compile(const char *source, Chunk *chunk)
     {
         declaration();
     }
-    endCompiler();
-    return !parser.hadError;
+    ObjFunction *function = endCompiler();
+    return parser.hadError ? NULL : function;
 }

@@ -10,12 +10,24 @@
 
 #define STACK_MAX 256
 
+/**
+ * 一个CallFrame 代表一个正在进行的函数调用。slots字段指向虚拟机的值栈中该函数可以使用的第一个槽
+ */
+typedef struct
+{
+  ObjFunction *function;
+  uint8_t *ip;
+  Value *slots;
+} CallFrame;
+
 typedef struct
 {
   Chunk *chunk;
   // 当虚拟机运行字节码时，它会记录它在哪里
   // IP 总是指向下一条指令，而不是当前正在处理的指令
   uint8_t *ip;
+  CallFrame frames[FRAMES_MAX];
+  int frameCount;
   // 栈
   Value stack[STACK_MAX];
   // 栈顶指针
