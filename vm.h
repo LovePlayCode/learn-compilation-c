@@ -3,13 +3,13 @@
 //
 #ifndef clox_vm_h
 #define clox_vm_h
-
+#include "object.h"
 #include "chunk.h"
 #include "value.h"
 #include "table.h"
 
-#define STACK_MAX 256
-
+#define FRAMES_MAX 64
+#define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
 /**
  * 一个CallFrame 代表一个正在进行的函数调用。slots字段指向虚拟机的值栈中该函数可以使用的第一个槽
  */
