@@ -352,6 +352,7 @@ InterpretResult interpret(const char *source)
     push(OBJ_VAL(function));
     CallFrame *frame = &vm.frames[vm.frameCount++];
     frame->function = function;
+    // 将 IP 指向字节码数组
     frame->ip = function->chunk.code;
     frame->slots = vm.stack;
     return run();
