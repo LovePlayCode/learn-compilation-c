@@ -30,6 +30,13 @@ ObjFunction *newFunction()
     return function;
 }
 
+ObjNative *newNative(NativeFn function)
+{
+    ObjNative *native = ALLOCATE_OBJ(ObjNative, OBJ_NATIVE);
+    native->function = function;
+    return native;
+}
+
 /**
  * 在堆上创建字符串对象的副本
  * @param chars 源字符串指针（不会被修改）
@@ -76,6 +83,9 @@ void printObject(Value value)
     {
     case OBJ_FUNCTION:
         printFunction(AS_FUNCTION(value));
+        break;
+    case OBJ_NATIVE:
+        printf("<native fn>");
         break;
     case OBJ_STRING:
         printf("%s", AS_CSTRING(value));
