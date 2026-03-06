@@ -33,6 +33,8 @@ typedef enum
   OP_JUMP_IF_FALSE,
   OP_LOOP,
   OP_CALL,
+  // 闭包。
+  OP_CLOSURE,
   OP_RETURN,
 } OpCode;
 typedef struct
