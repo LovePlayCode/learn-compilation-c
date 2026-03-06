@@ -21,6 +21,8 @@ static void resetStack()
     vm.frameCount = 0;
 }
 
+static void defineNative(const char *name, NativeFn function);
+
 void initVM()
 {
     resetStack();
