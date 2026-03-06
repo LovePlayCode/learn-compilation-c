@@ -395,6 +395,10 @@ static int resolveLocal(Compiler *compiler, Token *name)
     return -1;
 }
 
+/**
+ * isLocal 标志区分了 upvalue 是直接引用外层局部变量（isLocal = true），
+ * 还是间接引用外层 upvalue（isLocal = false）。
+ */
 static int addUpvalue(Compiler *compiler, uint8_t index,
                       bool isLocal)
 {
@@ -427,7 +431,11 @@ static int resolveUpvalue(Compiler *compiler, Token *name)
     {
         return addUpvalue(compiler, (uint8_t)local, true);
     }
-
+    int upvalue = resolveUpvalue(compiler->enclosing, name);
+    if (upvalue != -1)
+    {
+        return addUpvalue(compiler, (uint8_t)upvalue, false);
+    }
     return -1;
 }
 
