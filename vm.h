@@ -35,6 +35,8 @@ typedef struct
   Value *stackTop;
   Table globals;
   Table strings;
+  // 指向上值的链表头指针
+  ObjUpvalue *openUpvalues;
   Obj *objects;
 } VM;
 

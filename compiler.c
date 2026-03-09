@@ -44,6 +44,7 @@ typedef struct
 {
     Token name;
     int depth;
+    bool isCaptured;
 } Local;
 
 typedef struct
@@ -310,6 +311,7 @@ static void initCompiler(Compiler *compiler, FunctionType type)
     }
     Local *local = &current->locals[current->localCount++];
     local->depth = 0;
+    local->isCaptured = false;
     local->name.start = "";
     local->name.length = 0;
 }
@@ -346,7 +348,14 @@ static void endScope()
            current->locals[current->localCount - 1].depth >
                current->scopeDepth)
     {
-        emitByte(OP_POP);
+        if (current->locals[current->localCount - 1].isCaptured)
+        {
+            emitByte(OP_CLOSE_UPVALUE);
+        }
+        else
+        {
+            emitByte(OP_POP);
+        }
         current->localCount--;
     }
 }
@@ -367,7 +376,7 @@ static void addLocal(Token name)
     Local *local = &current->locals[current->localCount++];
     local->name = name;
     local->depth = -1;
-    local->depth = current->scopeDepth;
+    local->isCaptured = false;
 }
 
 static bool identifiersEqual(Token *a, Token *b)
@@ -434,6 +443,8 @@ static int resolveUpvalue(Compiler *compiler, Token *name)
     int upvalue = resolveUpvalue(compiler->enclosing, name);
     if (upvalue != -1)
     {
+        // 解析标识符时，如果为某个局部变量创建了上值，标记为已捕获。
+        compiler->enclosing->locals[local].isCaptured = true;
         return addUpvalue(compiler, (uint8_t)upvalue, false);
     }
     return -1;
