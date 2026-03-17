@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>&#x95ed;&#x5305;&#x5b9e;&#x73b0;&#x5168;&#x6d41;&#x7a0b;&#x5206;&#x6790;</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="闭包实现全流程分析">闭包实现全流程分析</h1>
+<h2 id="一什么是闭包问题">一、什么是闭包问题</h2>
+<pre><code class="language-js">fun <span class="hljs-title function_">outer</span>(<span class="hljs-params"></span>) {
+  <span class="hljs-keyword">var</span> x = <span class="hljs-string">&quot;outside&quot;</span>;
+  fun <span class="hljs-title function_">inner</span>(<span class="hljs-params"></span>) {
+    print x;   <span class="hljs-comment">// inner 引用了 outer 的局部变量 x</span>
+  }
+  <span class="hljs-title function_">inner</span>();
+}
+<span class="hljs-title function_">outer</span>();
+</code></pre>
+<p><code>inner</code> 函数访问了不属于自己作用域的变量 <code>x</code>，编译器和 VM 需要一套机制来&quot;捕获&quot;这个变量——这就是闭包（Closure）。</p>
+<hr>
+<h2 id="二核心数据结构">二、核心数据结构</h2>
+<h3 id="21-编译期结构">2.1 编译期结构</h3>
+<pre><code class="language-c"><span class="hljs-comment">// compiler.c</span>
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-type">uint8_t</span> index;   <span class="hljs-comment">// 被捕获变量的索引</span>
+    <span class="hljs-type">bool</span> isLocal;    <span class="hljs-comment">// true: 捕获的是直接外层的局部变量</span>
+                     <span class="hljs-comment">// false: 捕获的是外层的 upvalue（链式传递）</span>
+} Upvalue;
+
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">Compiler</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">Compiler</span> *<span class="hljs-title">enclosing</span>;</span>    <span class="hljs-comment">// 外层编译器（编译器栈）</span>
+    ObjFunction *function;
+    FunctionType type;
+    Local locals[UINT8_COUNT];     <span class="hljs-comment">// 局部变量表</span>
+    <span class="hljs-type">int</span> localCount;
+    Upvalue upvalues[UINT8_COUNT]; <span class="hljs-comment">// 该函数捕获的 upvalue 记录</span>
+    <span class="hljs-type">int</span> scopeDepth;
+} Compiler;
+</code></pre>
+<h3 id="22-运行时结构">2.2 运行时结构</h3>
+<pre><code class="language-c"><span class="hljs-comment">// object.h</span>
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">ObjUpvalue</span> {</span>
+  Obj obj;
+  Value *location;    <span class="hljs-comment">// 指向被捕获变量在栈上的位置</span>
+} ObjUpvalue;
+
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+  Obj obj;
+  ObjFunction *function;      <span class="hljs-comment">// 底层函数对象</span>
+  ObjUpvalue **upvalues;      <span class="hljs-comment">// upvalue 指针数组</span>
+  <span class="hljs-type">int</span> upvalueCount;
+} ObjClosure;
+</code></pre>
+<h3 id="23-调用帧">2.3 调用帧</h3>
+<pre><code class="language-c"><span class="hljs-comment">// vm.h</span>
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+  ObjClosure *closure;   <span class="hljs-comment">// 注意：不是 ObjFunction*，而是 ObjClosure*</span>
+  <span class="hljs-type">uint8_t</span> *ip;
+  Value *slots;
+} CallFrame;
+</code></pre>
+<h3 id="24-结构关系图">2.4 结构关系图</h3>
+<pre><code class="language-mermaid">classDiagram
+    class Compiler {
+        +Compiler* enclosing
+        +ObjFunction* function
+        +Local locals[]
+        +Upvalue upvalues[]
+        +int localCount
+        +int scopeDepth
+    }
+
+    class Upvalue_Compile {
+        +uint8_t index
+        +bool isLocal
+    }
+
+    class ObjClosure {
+        +Obj obj
+        +ObjFunction* function
+        +ObjUpvalue** upvalues
+        +int upvalueCount
+    }
+
+    class ObjUpvalue {
+        +Obj obj
+        +Value* location
+    }
+
+    class ObjFunction {
+        +int arity
+        +int upvalueCount
+        +Chunk chunk
+        +ObjString* name
+    }
+
+    class CallFrame {
+        +ObjClosure* closure
+        +uint8_t* ip
+        +Value* slots
+    }
+
+    Compiler --&gt; Upvalue_Compile : 编译期记录
+    ObjClosure --&gt; ObjFunction : 包装
+    ObjClosure --&gt; ObjUpvalue : 持有 N 个
+    ObjUpvalue --&gt; Value : location 指针
+    CallFrame --&gt; ObjClosure : 运行时引用
+</code></pre>
+<hr>
+<h2 id="三编译期流程">三、编译期流程</h2>
+<h3 id="31-变量查找三级策略">3.1 变量查找三级策略</h3>
+<p>当编译器遇到一个变量名时，<code>namedVariable()</code> 按以下优先级查找：</p>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;遇到变量名 x&quot;] --&gt; B{&quot;resolveLocal\n当前函数的 locals 表&quot;}
+    B --&gt;|找到| C[&quot;OP_GET_LOCAL / OP_SET_LOCAL&quot;]
+    B --&gt;|未找到| D{&quot;resolveUpvalue\n向外层递归查找&quot;}
+    D --&gt;|找到| E[&quot;OP_GET_UPVALUE / OP_SET_UPVALUE&quot;]
+    D --&gt;|未找到| F[&quot;OP_GET_GLOBAL / OP_SET_GLOBAL&quot;]
+</code></pre>
+<p>对应代码（<code>compiler.c:524</code>）：</p>
+<pre><code class="language-c"><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">namedVariable</span><span class="hljs-params">(Token name, <span class="hljs-type">bool</span> canAssign)</span> {
+    <span class="hljs-type">int</span> arg = resolveLocal(current, &amp;name);
+    <span class="hljs-keyword">if</span> (arg != <span class="hljs-number">-1</span>) {
+        getOp = OP_GET_LOCAL;       <span class="hljs-comment">// 第一级：本地变量</span>
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> ((arg = resolveUpvalue(current, &amp;name)) != <span class="hljs-number">-1</span>) {
+        getOp = OP_GET_UPVALUE;     <span class="hljs-comment">// 第二级：upvalue</span>
+    } <span class="hljs-keyword">else</span> {
+        getOp = OP_GET_GLOBAL;      <span class="hljs-comment">// 第三级：全局变量</span>
+    }
+}
+</code></pre>
+<h3 id="32-resolveupvalue-递归查找">3.2 resolveUpvalue 递归查找</h3>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;resolveUpvalue(inner, 'x')&quot;] --&gt; B[&quot;resolveLocal(outer, 'x')&quot;]
+    B --&gt;|&quot;找到 local index=1&quot;| C[&quot;addUpvalue(inner, index=1, isLocal=true)&quot;]
+    C --&gt; D[&quot;inner.upvalues[0] = {index:1, isLocal:true}&quot;]
+    D --&gt; E[&quot;返回 upvalue index 0&quot;]
+
+    B --&gt;|未找到| F[&quot;resolveUpvalue(outer, 'x')&quot;]
+    F --&gt;|找到| G[&quot;addUpvalue(inner, index=N, isLocal=false)&quot;]
+    F --&gt;|未找到| H[&quot;返回 -1（不是 upvalue）&quot;]
+</code></pre>
+<p>对应代码（<code>compiler.c:424</code>）：</p>
+<pre><code class="language-c"><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">resolveUpvalue</span><span class="hljs-params">(Compiler *compiler, Token *name)</span> {
+    <span class="hljs-keyword">if</span> (compiler-&gt;enclosing == <span class="hljs-literal">NULL</span>) <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+
+    <span class="hljs-comment">// 先在直接外层找局部变量</span>
+    <span class="hljs-type">int</span> local = resolveLocal(compiler-&gt;enclosing, name);
+    <span class="hljs-keyword">if</span> (local != <span class="hljs-number">-1</span>) {
+        <span class="hljs-keyword">return</span> addUpvalue(compiler, (<span class="hljs-type">uint8_t</span>)local, <span class="hljs-literal">true</span>);  <span class="hljs-comment">// isLocal = true</span>
+    }
+
+    <span class="hljs-comment">// 再递归到更外层找 upvalue</span>
+    <span class="hljs-type">int</span> upvalue = resolveUpvalue(compiler-&gt;enclosing, name);
+    <span class="hljs-keyword">if</span> (upvalue != <span class="hljs-number">-1</span>) {
+        <span class="hljs-keyword">return</span> addUpvalue(compiler, (<span class="hljs-type">uint8_t</span>)upvalue, <span class="hljs-literal">false</span>); <span class="hljs-comment">// isLocal = false</span>
+    }
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre>
+<h3 id="33-addupvalue-去重注册">3.3 addUpvalue 去重注册</h3>
+<pre><code class="language-c"><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">addUpvalue</span><span class="hljs-params">(Compiler *compiler, <span class="hljs-type">uint8_t</span> index, <span class="hljs-type">bool</span> isLocal)</span> {
+    <span class="hljs-type">int</span> upvalueCount = compiler-&gt;function-&gt;upvalueCount;
+
+    <span class="hljs-comment">// 去重：如果已经捕获过同一个变量，直接返回已有索引</span>
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; upvalueCount; i++) {
+        Upvalue *upvalue = &amp;compiler-&gt;upvalues[i];
+        <span class="hljs-keyword">if</span> (upvalue-&gt;index == index &amp;&amp; upvalue-&gt;isLocal == isLocal) {
+            <span class="hljs-keyword">return</span> i;
+        }
+    }
+
+    compiler-&gt;upvalues[upvalueCount].isLocal = isLocal;
+    compiler-&gt;upvalues[upvalueCount].index = index;
+    <span class="hljs-keyword">return</span> compiler-&gt;function-&gt;upvalueCount++;
+}
+</code></pre>
+<h3 id="34-op_closure-字节码生成">3.4 OP_CLOSURE 字节码生成</h3>
+<p><code>function()</code> 编译结束后，生成 <code>OP_CLOSURE</code> 及其 upvalue 操作数：</p>
+<pre><code class="language-c">ObjFunction *function = endCompiler();
+emitBytes(OP_CLOSURE, makeConstant(OBJ_VAL(function)));
+
+<span class="hljs-comment">// 紧跟 OP_CLOSURE 之后，为每个 upvalue 写入两个字节</span>
+<span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; function-&gt;upvalueCount; i++) {
+    emitByte(compiler.upvalues[i].isLocal ? <span class="hljs-number">1</span> : <span class="hljs-number">0</span>);  <span class="hljs-comment">// 是否直接捕获局部变量</span>
+    emitByte(compiler.upvalues[i].index);              <span class="hljs-comment">// 变量索引</span>
+}
+</code></pre>
+<p>生成的字节码布局：</p>
+<pre><code>OP_CLOSURE  constantIndex  [isLocal₀ index₀]  [isLocal₁ index₁]  ...
+</code></pre>
+<hr>
+<h2 id="四运行时流程">四、运行时流程</h2>
+<h3 id="41-op_closure创建闭包并捕获变量">4.1 OP_CLOSURE：创建闭包并捕获变量</h3>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;VM 执行 OP_CLOSURE&quot;] --&gt; B[&quot;从常量池读取 ObjFunction&quot;]
+    B --&gt; C[&quot;newClosure(function)\n分配 ObjClosure + upvalues 数组&quot;]
+    C --&gt; D[&quot;push(closure) 压入栈&quot;]
+    D --&gt; E{&quot;遍历每个 upvalue&quot;}
+    E --&gt; F{&quot;isLocal?&quot;}
+    F --&gt;|&quot;true&quot;| G[&quot;captureUpvalue(frame-&gt;slots + index)\n创建 ObjUpvalue 指向栈上变量&quot;]
+    F --&gt;|&quot;false&quot;| H[&quot;复用外层闭包的 upvalue\nframe-&gt;closure-&gt;upvalues[index]&quot;]
+    G --&gt; I[&quot;closure-&gt;upvalues[i] = upvalue&quot;]
+    H --&gt; I
+    I --&gt; E
+</code></pre>
+<p>对应代码（<code>vm.c:434</code>）：</p>
+<pre><code class="language-c"><span class="hljs-keyword">case</span> OP_CLOSURE: {
+    ObjFunction *function = AS_FUNCTION(READ_CONSTANT());
+    ObjClosure *closure = newClosure(function);
+    push(OBJ_VAL(closure));
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; closure-&gt;upvalueCount; i++) {
+        <span class="hljs-type">uint8_t</span> isLocal = READ_BYTE();
+        <span class="hljs-type">uint8_t</span> index = READ_BYTE();
+        <span class="hljs-keyword">if</span> (isLocal) {
+            <span class="hljs-comment">// 直接捕获外层栈上的局部变量</span>
+            closure-&gt;upvalues[i] = captureUpvalue(frame-&gt;slots + index);
+        } <span class="hljs-keyword">else</span> {
+            <span class="hljs-comment">// 从外层闭包的 upvalues 中传递</span>
+            closure-&gt;upvalues[i] = frame-&gt;closure-&gt;upvalues[index];
+        }
+    }
+    <span class="hljs-keyword">break</span>;
+}
+</code></pre>
+<h3 id="42-captureupvalue创建-upvalue-对象">4.2 captureUpvalue：创建 upvalue 对象</h3>
+<pre><code class="language-c"><span class="hljs-type">static</span> ObjUpvalue *<span class="hljs-title function_">captureUpvalue</span><span class="hljs-params">(Value *local)</span> {
+    ObjUpvalue *createdUpvalue = newUpvalue(local);
+    <span class="hljs-keyword">return</span> createdUpvalue;
+}
+</code></pre>
+<p><code>newUpvalue</code> 分配一个 <code>ObjUpvalue</code>，其 <code>location</code> 指针直接指向栈上变量的地址：</p>
+<pre><code class="language-c">ObjUpvalue *<span class="hljs-title function_">newUpvalue</span><span class="hljs-params">(Value *slot)</span> {
+    ObjUpvalue *upvalue = ALLOCATE_OBJ(ObjUpvalue, OBJ_UPVALUE);
+    upvalue-&gt;location = slot;
+    <span class="hljs-keyword">return</span> upvalue;
+}
+</code></pre>
+<h3 id="43-op_get_upvalue--op_set_upvalue">4.3 OP_GET_UPVALUE / OP_SET_UPVALUE</h3>
+<pre><code class="language-c"><span class="hljs-keyword">case</span> OP_GET_UPVALUE: {
+    <span class="hljs-type">uint8_t</span> slot = READ_BYTE();
+    push(*frame-&gt;closure-&gt;upvalues[slot]-&gt;location);  <span class="hljs-comment">// 通过指针间接读取</span>
+    <span class="hljs-keyword">break</span>;
+}
+
+<span class="hljs-keyword">case</span> OP_SET_UPVALUE: {
+    <span class="hljs-type">uint8_t</span> slot = READ_BYTE();
+    *frame-&gt;closure-&gt;upvalues[slot]-&gt;location = peek(<span class="hljs-number">0</span>);  <span class="hljs-comment">// 通过指针间接写入</span>
+    <span class="hljs-keyword">break</span>;
+}
+</code></pre>
+<h3 id="44-函数调用所有函数都包装成闭包">4.4 函数调用：所有函数都包装成闭包</h3>
+<pre><code class="language-c"><span class="hljs-comment">// interpret() 入口——顶层脚本也包装成闭包</span>
+ObjFunction *function = compile(source);
+push(OBJ_VAL(function));
+ObjClosure *closure = newClosure(function);
+pop();
+push(OBJ_VAL(closure));
+call(closure, <span class="hljs-number">0</span>);
+
+<span class="hljs-comment">// callValue() 分派——只处理 OBJ_CLOSURE</span>
+<span class="hljs-keyword">case</span> OBJ_CLOSURE:
+    <span class="hljs-keyword">return</span> call(AS_CLOSURE(callee), argCount);
+</code></pre>
+<p><code>CallFrame</code> 持有的始终是 <code>ObjClosure*</code>，统一了有无 upvalue 的函数处理方式。</p>
+<hr>
+<h2 id="五完整示例推演">五、完整示例推演</h2>
+<p>以开头的代码为例：</p>
+<pre><code class="language-js">fun <span class="hljs-title function_">outer</span>(<span class="hljs-params"></span>) {
+  <span class="hljs-keyword">var</span> x = <span class="hljs-string">&quot;outside&quot;</span>;
+  fun <span class="hljs-title function_">inner</span>(<span class="hljs-params"></span>) {
+    print x;
+  }
+  <span class="hljs-title function_">inner</span>();
+}
+<span class="hljs-title function_">outer</span>();
+</code></pre>
+<h3 id="51-编译期">5.1 编译期</h3>
+<pre><code class="language-mermaid">flowchart LR
+    subgraph script_compiler [&quot;script 编译器&quot;]
+        direction TB
+        S0[&quot;locals[0] = '' (脚本占位)&quot;]
+    end
+
+    subgraph outer_compiler [&quot;outer 编译器&quot;]
+        direction TB
+        O0[&quot;locals[0] = '' (函数占位)&quot;]
+        O1[&quot;locals[1] = 'x'&quot;]
+        O2[&quot;locals[2] = 'inner'&quot;]
+    end
+
+    subgraph inner_compiler [&quot;inner 编译器&quot;]
+        direction TB
+        I0[&quot;locals[0] = '' (函数占位)&quot;]
+        I_UP[&quot;upvalues[0] = {index:1, isLocal:true}&quot;]
+    end
+
+    script_compiler -.-&gt;|enclosing| outer_compiler
+    outer_compiler -.-&gt;|enclosing| inner_compiler
+    inner_compiler --&gt;|&quot;resolveUpvalue('x')&quot;| outer_compiler
+    outer_compiler --&gt;|&quot;resolveLocal('x') → 1&quot;| O1
+</code></pre>
+<p>inner 编译时遇到 <code>x</code>：</p>
+<ol>
+<li><code>resolveLocal(inner, &quot;x&quot;)</code> → -1（inner 没有 x）</li>
+<li><code>resolveUpvalue(inner, &quot;x&quot;)</code> → <code>resolveLocal(outer, &quot;x&quot;)</code> → 找到 index=1</li>
+<li><code>addUpvalue(inner, index=1, isLocal=true)</code> → upvalue index=0</li>
+</ol>
+<p>生成的字节码：</p>
+<ul>
+<li>inner: <code>OP_GET_UPVALUE 0</code> → <code>OP_PRINT</code></li>
+<li>outer: <code>OP_CONSTANT &quot;outside&quot;</code> → <code>OP_CLOSURE &lt;inner&gt; [isLocal=1, index=1]</code> → <code>OP_CALL 0</code></li>
+</ul>
+<h3 id="52-运行时栈变化">5.2 运行时栈变化</h3>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant Stack as 值栈
+    participant VM as VM 执行
+
+    Note over Stack: [ &lt;script&gt; ]
+    VM-&gt;&gt;Stack: OP_CLOSURE outer → push &lt;closure outer&gt;
+    VM-&gt;&gt;Stack: OP_DEFINE_GLOBAL 'outer' → pop
+    Note over Stack: [ &lt;script&gt; ]
+
+    VM-&gt;&gt;Stack: OP_GET_GLOBAL 'outer' → push &lt;closure outer&gt;
+    VM-&gt;&gt;Stack: OP_CALL 0 → 进入 outer 帧
+    Note over Stack: [ &lt;script&gt; ][ &lt;closure outer&gt; ]
+
+    rect rgb(230, 245, 255)
+        Note over VM: 执行 outer 函数体
+        VM-&gt;&gt;Stack: OP_CONSTANT → push &quot;outside&quot;
+        Note over Stack: [ &lt;script&gt; ][ &lt;closure outer&gt; ][ &quot;outside&quot; ]
+
+        VM-&gt;&gt;Stack: OP_CLOSURE inner
+        Note over VM: isLocal=1, index=1&lt;br/&gt;captureUpvalue(slots+1)&lt;br/&gt;→ ObjUpvalue.location 指向 &quot;outside&quot;
+        Note over Stack: [ &lt;script&gt; ][ &lt;closure outer&gt; ][ &quot;outside&quot; ][ &lt;closure inner&gt; ]
+
+        VM-&gt;&gt;Stack: OP_CALL 0 → 进入 inner 帧
+        rect rgb(255, 245, 230)
+            Note over VM: 执行 inner 函数体
+            VM-&gt;&gt;Stack: OP_GET_UPVALUE 0
+            Note over VM: closure-&gt;upvalues[0]-&gt;location&lt;br/&gt;→ 指向栈上的 &quot;outside&quot;&lt;br/&gt;→ push &quot;outside&quot;
+            VM-&gt;&gt;Stack: OP_PRINT → 打印 &quot;outside&quot;，pop
+            VM-&gt;&gt;Stack: OP_NIL + OP_RETURN → 返回 nil
+        end
+
+        VM-&gt;&gt;Stack: OP_POP (弹出 inner 调用结果)
+        VM-&gt;&gt;Stack: OP_NIL + OP_RETURN → outer 返回
+    end
+
+    VM-&gt;&gt;Stack: OP_POP (弹出 outer 调用结果)
+    Note over Stack: [ &lt;script&gt; ]
+</code></pre>
+<h3 id="53-运行时内存关系">5.3 运行时内存关系</h3>
+<pre><code class="language-mermaid">graph LR
+    subgraph 值栈
+        slot0[&quot;slots[0]: &lt;closure outer&gt;&quot;]
+        slot1[&quot;slots[1]: 'outside'&quot;]
+        slot2[&quot;slots[2]: &lt;closure inner&gt;&quot;]
+    end
+
+    subgraph inner_closure [&quot;ObjClosure (inner)&quot;]
+        upvalues_arr[&quot;upvalues[0]&quot;]
+    end
+
+    subgraph upvalue_obj [&quot;ObjUpvalue&quot;]
+        location[&quot;location: Value*&quot;]
+    end
+
+    slot2 -.- inner_closure
+    upvalues_arr --&gt; upvalue_obj
+    location --&gt;|&quot;指针&quot;| slot1
+
+    style slot1 fill:#ffffcc,stroke:#333
+    style location fill:#ccffcc,stroke:#333
+</code></pre>
+<p><strong>关键点</strong>：<code>ObjUpvalue.location</code> 是一个指针，直接指向栈上 <code>&quot;outside&quot;</code> 所在的 slot，读写 upvalue 就是通过这个指针间接访问栈上的值。</p>
+<hr>
+<h2 id="六闭包相关的内存管理">六、闭包相关的内存管理</h2>
+<h3 id="创建">创建</h3>
+<table>
+<thead>
+<tr>
+<th>对象</th>
+<th>创建函数</th>
+<th>触发时机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ObjClosure</code></td>
+<td><code>newClosure(function)</code></td>
+<td>VM 执行 <code>OP_CLOSURE</code></td>
+</tr>
+<tr>
+<td><code>ObjUpvalue</code></td>
+<td><code>newUpvalue(slot)</code></td>
+<td><code>captureUpvalue()</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="销毁">销毁</h3>
+<pre><code class="language-c"><span class="hljs-comment">// memory.c - freeObject()</span>
+<span class="hljs-keyword">case</span> OBJ_CLOSURE: {
+    ObjClosure *closure = (ObjClosure *)object;
+    FREE_ARRAY(ObjUpvalue *, closure-&gt;upvalues, closure-&gt;upvalueCount); <span class="hljs-comment">// 释放指针数组</span>
+    FREE(ObjClosure, object);  <span class="hljs-comment">// 释放闭包对象本身（不释放 function，function 独立管理）</span>
+    <span class="hljs-keyword">break</span>;
+}
+
+<span class="hljs-keyword">case</span> OBJ_UPVALUE:
+    FREE(ObjUpvalue, object);  <span class="hljs-comment">// 只释放 upvalue 对象，不释放它指向的值</span>
+    <span class="hljs-keyword">break</span>;
+</code></pre>
+<hr>
+<h2 id="七总结闭包处理的设计要点">七、总结：闭包处理的设计要点</h2>
+<pre><code class="language-mermaid">flowchart TB
+    subgraph 编译期
+        A[&quot;resolveLocal: 查本地&quot;] --&gt; B[&quot;resolveUpvalue: 递归查外层&quot;]
+        B --&gt; C[&quot;addUpvalue: 注册到 compiler.upvalues[]&quot;]
+        C --&gt; D[&quot;function() 末尾: 写入 OP_CLOSURE + upvalue 操作数&quot;]
+    end
+
+    subgraph 运行时
+        E[&quot;OP_CLOSURE: 创建 ObjClosure&quot;] --&gt; F[&quot;captureUpvalue: 创建 ObjUpvalue\nlocation 指向栈上变量&quot;]
+        F --&gt; G[&quot;OP_GET/SET_UPVALUE:\n通过 location 指针间接访问&quot;]
+    end
+
+    编译期 --&gt;|&quot;字节码&quot;| 运行时
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>设计决策</th>
+<th>做法</th>
+<th>好处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>统一包装</td>
+<td>所有函数（包括顶层脚本）都包装成 <code>ObjClosure</code></td>
+<td><code>CallFrame</code> 结构统一，不需要区分普通函数和闭包</td>
+</tr>
+<tr>
+<td>指针间接访问</td>
+<td><code>ObjUpvalue.location</code> 是 <code>Value*</code> 指针</td>
+<td>读写 upvalue 就是解引用指针，开销极小</td>
+</tr>
+<tr>
+<td>链式传递</td>
+<td><code>isLocal=false</code> 时复用外层闭包的 upvalue</td>
+<td>支持任意深度的嵌套闭包</td>
+</tr>
+<tr>
+<td>编译期去重</td>
+<td><code>addUpvalue</code> 检查重复</td>
+<td>同一变量被多次引用只创建一个 upvalue</td>
+</tr>
+<tr>
+<td>字节码内联</td>
+<td>upvalue 元数据紧跟 <code>OP_CLOSURE</code></td>
+<td>无需额外查表，VM 顺序读取即可</td>
+</tr>
+</tbody>
+</table>
+
+            
+            
+        </body>
+        </html>
