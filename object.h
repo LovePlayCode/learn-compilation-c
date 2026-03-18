@@ -30,6 +30,8 @@ typedef enum
 struct Obj
 {
   ObjType type;
+  // 是否是一个有效对象
+  bool isMarked;
   struct Obj *next;
 };
 
