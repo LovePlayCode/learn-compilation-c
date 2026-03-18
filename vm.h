@@ -38,6 +38,9 @@ typedef struct
   // 指向上值的链表头指针
   ObjUpvalue *openUpvalues;
   Obj *objects;
+  int grayCount;
+  int grayCapacity;
+  Obj **grayStack;
 } VM;
 
 extern VM vm;
