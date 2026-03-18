@@ -186,6 +186,18 @@ ObjString *tableFindString(Table *table, const char *chars,
     }
 }
 
+void tableRemoveWhite(Table *table)
+{
+    for (int i = 0; i < table->capacity; i++)
+    {
+        Entry *entry = &table->entries[i];
+        // 判断是否为 mark，如果不是 mark，相当于弱引用断开，直接清空，让垃圾回收器回收
+        if (entry->key != NULL && !entry->key->obj.isMarked)
+        {
+            tableDelete(table, entry->key);
+        }
+    }
+}
 void markTable(Table *table)
 {
     for (int i = 0; i < table->capacity; i++)
