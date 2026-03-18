@@ -37,6 +37,10 @@ typedef struct
   Table strings;
   // 指向上值的链表头指针
   ObjUpvalue *openUpvalues;
+  // 虚拟机已分配的托管内存实时字节总数
+  size_t bytesAllocated;
+  // 触发下一次回收的阈值
+  size_t nextGC;
   Obj *objects;
   int grayCount;
   int grayCapacity;

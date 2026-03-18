@@ -4,15 +4,16 @@
 #include <stdlib.h>
 #include "vm.h"
 
+#include "compiler.h"
+
+#include "memory.h"
+
 #ifdef DEBUG_LOG_GC
 #include <stdio.h>
 #include "debug.h"
 #endif
 
-#include "compiler.h"
-
-#include "memory.h"
-
+#define GC_HEAP_GROW_FACTOR 2
 /**
  * 扩容场景（原地扩展成功）：
 ┌─────────┐              ┌─────────────────┐
@@ -35,11 +36,17 @@ NULL	0	> 0	分配新内存
  */
 void *reallocate(void *pointer, size_t oldSize, size_t newSize)
 {
+    vm.bytesAllocated += newSize - oldSize;
+
     if (newSize > oldSize)
     {
 #ifdef DEBUG_STRESS_GC
         collectGarbage();
 #endif
+        if (vm.bytesAllocated > vm.nextGC)
+        {
+            collectGarbage();
+        }
     }
     if (newSize == 0)
     {
@@ -233,11 +240,17 @@ void collectGarbage()
 {
 #ifdef DEBUG_LOG_GC
     printf("-- gc 开始\n");
+    size_t before = vm.bytesAllocated;
+
+    printf("   collected %zu bytes (from %zu to %zu) next at %zu\n",
+           before - vm.bytesAllocated, before, vm.bytesAllocated,
+           vm.nextGC);
 #endif
     markRoots();
     traceReferences();
     tableRemoveWhite(&vm.strings);
     sweep();
+    vm.nextGC = vm.bytesAllocated * GC_HEAP_GROW_FACTOR;
 #ifdef DEBUG_LOG_GC
     printf("-- gc 结束\n");
 #endif
